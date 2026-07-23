@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "generic-coding-agent"
+version = "0.1.0"
+description = "A general-purpose, evidence-driven coding agent"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+keywords = ["agent", "coding-agent", "langgraph", "llm", "developer-tools"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+dependencies = [
+  "langgraph>=0.2.70,<2",
+  "pydantic>=2.7,<3",
+  "rich>=13.7,<16",
+  "prompt_toolkit>=3.0,<4",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0,<10", "build>=1.2,<2"]
+
+[project.scripts]
+coding-agent = "coding_agent.main:main"
+coding-agent-chat = "coding_agent.chat:main"
+coding-agent-export-audit = "coding_agent.export_audit:main"
+
+[tool.setuptools.packages.find]
+include = ["coding_agent*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

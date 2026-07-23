@@ -1,0 +1,5 @@
+langgraph>=0.2.70,<2
+pydantic>=2.7,<3
+pytest>=8.0,<10
+rich>=13.7,<16
+prompt_toolkit>=3.0,<4

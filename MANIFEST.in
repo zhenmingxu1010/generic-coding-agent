@@ -1,0 +1,14 @@
+include AGENT_PRINCIPLES.md
+include CHANGELOG.md
+include CODE_OF_CONDUCT.md
+include CONTRIBUTING.md
+include ROADMAP.md
+include SECURITY.md
+include VERSION
+include requirements.txt
+recursive-include configs *.yaml
+recursive-include docs *.md *.txt *.gif
+recursive-include evaluations *.py *.json *.md
+recursive-include examples *.txt
+recursive-include regression_matrix *.json *.md
+recursive-include scripts *.py

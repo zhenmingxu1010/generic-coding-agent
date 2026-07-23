@@ -1,0 +1,1 @@
+写一个 Python 通讯录管理小项目。要求支持添加联系人、删除联系人、查询联系人、列出所有联系人；提供 main.py 命令行入口；提供 --demo 自动演示；提供 pytest 测试；README 说明运行方式；运行验证直到 pytest 和 python main.py --demo 都通过。

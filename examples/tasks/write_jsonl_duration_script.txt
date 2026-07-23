@@ -1,0 +1,1 @@
+写一个 Python 脚本统计 jsonl 文件中 duration 字段的总时长，单位输出为小时。要求支持命令行参数 --input，能跳过坏行和缺少 duration 的行，提供 pytest 测试，并运行验证。

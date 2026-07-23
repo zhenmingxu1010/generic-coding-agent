@@ -1,0 +1,1 @@
+分析当前 workspace 的代码结构，说明每个主要文件的作用，并生成 ARCHITECTURE.md。不要修改业务代码。

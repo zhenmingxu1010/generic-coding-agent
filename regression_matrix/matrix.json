@@ -1,0 +1,274 @@
+{
+  "version": "opensource_regression_matrix_v1",
+  "description": "Provider-neutral capability regression cases for Generic Coding Agent.",
+  "defaults": {
+    "agent_repo": ".",
+    "audit_dir": ".agent_runs/regression-audits",
+    "regression_work_root": ".agent_runs/regression-workspaces",
+    "llm_env": {
+      "AGENT_LLM_BASE_URL": "http://127.0.0.1:8000/v1",
+      "AGENT_LLM_API_KEY": "EMPTY",
+      "AGENT_LLM_MODEL": "local-model",
+      "AGENT_LLM_CONTEXT_WINDOW": "32768",
+      "AGENT_LLM_MAX_INPUT_TOKENS": "27000",
+      "AGENT_LLM_MAX_TOKENS": "4500",
+      "AGENT_LLM_TIMEOUT": "300"
+    }
+  },
+  "cases": [
+    {
+      "id": "T01",
+      "thread_id": "regression_t01_readonly",
+      "title": "Read-only project understanding",
+      "title_zh": "只读项目理解",
+      "purpose_zh": "验证 agent 能只读理解已有项目、生成有证据的分析报告，并且不修改工作区。",
+      "workspace": {"kind": "temporary", "template": "$REGRESSION_WORK_ROOT/t01_readonly"},
+      "setup_commands": [
+        "rm -rf \"$WORKSPACE\"",
+        "mkdir -p \"$WORKSPACE/src/catalog\" \"$WORKSPACE/tests\" \"$WORKSPACE/docs\"",
+        "printf '%s\\n' 'from .service import normalize_name' > \"$WORKSPACE/src/catalog/__init__.py\"",
+        "printf '%s\\n' 'def normalize_name(value: str) -> str:' '    return value.strip().casefold()' > \"$WORKSPACE/src/catalog/service.py\"",
+        "printf '%s\\n' 'from catalog import normalize_name' '' 'def test_normalize_name():' \"    assert normalize_name('  Example ') == 'example'\" > \"$WORKSPACE/tests/test_service.py\"",
+        "printf '%s\\n' '# Catalog example' '' 'A small package that normalizes catalog names.' > \"$WORKSPACE/README.md\""
+      ],
+      "max_rounds": 12,
+      "task": "这是一个只读项目理解任务。禁止修改或创建任何工作区文件。请分析项目目标、目录结构、主要入口、核心数据流、测试方式、潜在风险和可改进之处，并用文件路径或代码事实支撑结论。",
+      "expected_conditions": [
+        "final.ok == true",
+        "final.mode == 'analyze'",
+        "final.read_only == true",
+        "final.analysis_quality_ok == true",
+        "final.write_scope_audit.source_changed_files == []"
+      ],
+      "include_workspace_in_audit": true
+    },
+    {
+      "id": "T02",
+      "thread_id": "regression_t02_isolated_generation",
+      "title": "Isolated report generation",
+      "title_zh": "隔离生成分析脚本",
+      "purpose_zh": "验证 agent 在已有项目中新增交付脚本，并把自己的验证文件隔离到内部测试目录。",
+      "workspace": {"kind": "temporary", "template": "$REGRESSION_WORK_ROOT/t02_isolated_generation"},
+      "setup_commands": [
+        "rm -rf \"$WORKSPACE\"",
+        "mkdir -p \"$WORKSPACE/data/runs\" \"$WORKSPACE/scripts\"",
+        "printf '%s\\n' '{\"runs\":[{\"service\":\"api\",\"requests\":1200,\"error_rate\":0.01,\"p95_latency_ms\":180}]}' > \"$WORKSPACE/data/summary.json\"",
+        "printf '%s\\n' '{\"service\":\"worker\",\"requests\":800,\"error_rate\":0.02,\"p95_latency_ms\":240}' > \"$WORKSPACE/data/runs/worker.json\"",
+        "printf '%s\\n' '# Service metrics fixture' > \"$WORKSPACE/README.md\""
+      ],
+      "max_rounds": 16,
+      "task": "这是已有项目。允许新增 scripts/summarize_metrics.py，但禁止修改任何已有文件。脚本默认读取 data/summary.json；该文件不存在时回退读取 data/runs/*.json。输出 service、requests、error_rate、p95_latency_ms，支持 --input 和 --output-csv，默认输出 Markdown 表格。Agent 自己创建的验证测试必须位于 .coding_agent_test/<thread-id>。",
+      "expected_conditions": [
+        "final.ok == true",
+        "final.write_scope_audit.existing_project_modified_files == []",
+        "scripts/summarize_metrics.py exists",
+        "verification directly executes the no-argument fallback scenario with the default summary absent",
+        "fallback output provides non-placeholder values for every required field",
+        "agent-generated verification tests are under .coding_agent_test/<thread-id>"
+      ],
+      "include_workspace_in_audit": true
+    },
+    {
+      "id": "T03",
+      "thread_id": "regression_t03_cli_contract",
+      "title": "CLI argument behavior validation",
+      "title_zh": "CLI 参数语义验证",
+      "purpose_zh": "验证 CLI 参数真实影响输入输出，而不是只出现在参数解析器中。",
+      "workspace": {"kind": "temporary", "template": "$REGRESSION_WORK_ROOT/t03_cli_contract"},
+      "setup_commands": [
+        "rm -rf \"$WORKSPACE\"",
+        "mkdir -p \"$WORKSPACE/data\"",
+        "printf '%s\\n' '{\"items\":[{\"name\":\"__UNIQUE_ITEM__\",\"quantity\":3,\"price\":4.5}]}' > \"$WORKSPACE/data/items.json\""
+      ],
+      "max_rounds": 16,
+      "task": "创建 scripts/summarize_inventory.py 和 pytest 测试。脚本必须支持 --input 和 --output-csv；读取 JSON items，输出 name、quantity、price、total。默认 stdout 输出 Markdown 表格，--output-csv 必须写入能由 csv.DictReader 解析的 CSV。测试使用包含 __UNIQUE_ITEM__ 的临时输入，证明两个参数真实生效。",
+      "expected_conditions": [
+        "final.ok == true",
+        "final.contract_ok == true",
+        "final.requirement_atom_summary.required_failed == 0",
+        "final.verification.test_results.total > 0"
+      ],
+      "include_workspace_in_audit": true
+    },
+    {
+      "id": "T04",
+      "thread_id": "regression_t04_interface_repair",
+      "title": "Implementation and test interface repair",
+      "title_zh": "生成测试不一致修复",
+      "purpose_zh": "验证 agent 能根据 import 和接口错误修复实现，同时保持已有测试不变。",
+      "workspace": {"kind": "temporary", "template": "$REGRESSION_WORK_ROOT/t04_interface_repair"},
+      "setup_commands": [
+        "rm -rf \"$WORKSPACE\"",
+        "mkdir -p \"$WORKSPACE/tests\"",
+        "printf '%s\\n' 'def parse_range(text):' '    return 0.0' > \"$WORKSPACE/timecalc.py\"",
+        "printf '%s\\n' 'from timecalc import parse_duration_line, total_hours' '' 'def test_cross_midnight():' \"    assert parse_duration_line('23:00-01:30') == 2.5\" '' 'def test_total():' \"    assert total_hours(['09:00-10:15', '10:30-12:00']) == 2.75\" > \"$WORKSPACE/tests/test_timecalc.py\""
+      ],
+      "max_rounds": 16,
+      "repair_existing": true,
+      "task": "修复已有小项目。不要修改 tests/test_timecalc.py。实现 timecalc.py 的 parse_duration_line(text) 和 total_hours(lines)，支持跨午夜，并运行 pytest。",
+      "expected_conditions": [
+        "final.ok == true",
+        "final.verification.ok == true",
+        "final.interface_check.missing_imported_symbols is empty or absent",
+        "final.write_scope_audit.existing_project_modified_files contains timecalc.py",
+        "final.write_scope_audit.existing_project_modified_files does not contain tests/test_timecalc.py"
+      ],
+      "include_workspace_in_audit": true
+    },
+    {
+      "id": "T05",
+      "thread_id": "regression_t05_zero_tests",
+      "title": "Zero collected tests negative case",
+      "title_zh": "0 tests 检测",
+      "purpose_zh": "验证 pytest 未收集到测试时不能被错误报告为成功。",
+      "workspace": {"kind": "temporary", "template": "$REGRESSION_WORK_ROOT/t05_zero_tests"},
+      "setup_commands": [
+        "rm -rf \"$WORKSPACE\"",
+        "mkdir -p \"$WORKSPACE\"",
+        "printf '%s\\n' 'def add(a, b):' '    return a + b' > \"$WORKSPACE/calc.py\""
+      ],
+      "max_rounds": 8,
+      "repair_existing": true,
+      "task": "这是负向回归测试。验证已有工作区，但不要创建测试或修改源码。若 pytest 未收集到测试，最终必须明确失败。",
+      "expected_conditions": [
+        "final.ok == false",
+        "final.stopped_reason != 'verified_ok'",
+        "final.final_gate_status reports zero tests or missing execution evidence",
+        "final.write_scope_audit.source_changed_files == []"
+      ],
+      "include_workspace_in_audit": true
+    },
+    {
+      "id": "T06",
+      "thread_id": "regression_t06_no_pollution",
+      "title": "No source pollution",
+      "title_zh": "禁止污染原项目",
+      "purpose_zh": "验证新增交付物时不修改已有文件，并隔离 agent 自己的验证测试。",
+      "workspace": {"kind": "temporary", "template": "$REGRESSION_WORK_ROOT/t06_no_pollution"},
+      "setup_commands": [
+        "rm -rf \"$WORKSPACE\"",
+        "mkdir -p \"$WORKSPACE/data\" \"$WORKSPACE/scripts\" \"$WORKSPACE/docs\"",
+        "printf '%s\\n' '[{\"event\":\"login\",\"user_id\":7,\"success\":true}]' > \"$WORKSPACE/data/events.json\"",
+        "printf '%s\\n' '# Event fixture' > \"$WORKSPACE/README.md\""
+      ],
+      "max_rounds": 14,
+      "task": "这是已有项目。创建 scripts/inspect_event_schema.py 和 docs/event_schema.md，用于读取并说明 data/events.json 的字段结构。禁止修改任何已有文件。Agent 自己的验证测试必须写入 .coding_agent_test/<thread-id>。",
+      "expected_conditions": [
+        "final.ok == true",
+        "final.write_scope_audit.existing_project_modified_files == []",
+        "final.write_scope_audit.source_changed_files contains only scripts/inspect_event_schema.py and docs/event_schema.md",
+        "agent-generated verification tests are under .coding_agent_test/<thread-id>"
+      ],
+      "include_workspace_in_audit": true
+    },
+    {
+      "id": "T07",
+      "thread_id": "regression_t07_modify_bug",
+      "title": "Modify an existing bug",
+      "title_zh": "修改已有小项目 bug",
+      "purpose_zh": "验证 agent 能修改已有源文件、保留测试并通过最终验收。",
+      "workspace": {"kind": "temporary", "template": "$REGRESSION_WORK_ROOT/t07_modify_bug"},
+      "setup_commands": [
+        "rm -rf \"$WORKSPACE\"",
+        "mkdir -p \"$WORKSPACE/tests\"",
+        "printf '%s\\n' 'def divide(a, b):' '    return a * b' > \"$WORKSPACE/calculator.py\"",
+        "printf '%s\\n' 'from calculator import divide' '' 'def test_divide():' '    assert divide(8, 2) == 4' '' 'def test_zero():' '    try:' '        divide(1, 0)' '    except ZeroDivisionError:' '        return' \"    raise AssertionError('expected ZeroDivisionError')\" > \"$WORKSPACE/tests/test_calculator.py\""
+      ],
+      "max_rounds": 14,
+      "repair_existing": true,
+      "task": "修复 calculator.py 的 divide(a, b)。不要删除或弱化 tests/test_calculator.py，运行 pytest 验证。",
+      "expected_conditions": [
+        "final.ok == true",
+        "final.verification.ok == true",
+        "final.verification.test_results.total >= 2",
+        "final.write_scope_audit.existing_project_modified_files contains calculator.py",
+        "final.write_scope_audit.existing_project_modified_files does not contain tests/test_calculator.py"
+      ],
+      "include_workspace_in_audit": true
+    },
+    {
+      "id": "T08",
+      "thread_id": "regression_t08_greenfield_cli",
+      "title": "Generate a small CLI project",
+      "title_zh": "生成一个小型 CLI 项目",
+      "purpose_zh": "验证 agent 能从空目录生成可运行项目、文档和测试。",
+      "workspace": {"kind": "temporary", "template": "$REGRESSION_WORK_ROOT/t08_greenfield_cli"},
+      "setup_commands": ["rm -rf \"$WORKSPACE\"", "mkdir -p \"$WORKSPACE\""],
+      "max_rounds": 12,
+      "task": "在空工作区创建一个小型 Python CLI 项目：读取文本文件并统计非空行、单词数和字符数，输出 JSON。提供 README、pytest 测试和至少一个输入示例。CLI 支持 positional input file，运行测试验证。",
+      "expected_conditions": [
+        "final.ok == true",
+        "final.mode in ['write', 'generate_project']",
+        "final.verification.ok == true",
+        "workspace contains README.md",
+        "workspace contains at least one pytest file",
+        "final.requirement_atom_summary.required_failed == 0"
+      ],
+      "include_workspace_in_audit": true
+    },
+    {
+      "id": "T09",
+      "thread_id": "regression_t09_short_prompt",
+      "title": "Short prompt with safe defaults",
+      "title_zh": "短 Prompt 安全默认值",
+      "purpose_zh": "验证一句话功能任务能够记录语言与验收假设，并完成可执行验证。",
+      "workspace": {"kind": "temporary", "template": "$REGRESSION_WORK_ROOT/t09_short_prompt"},
+      "setup_commands": ["rm -rf \"$WORKSPACE\"", "mkdir -p \"$WORKSPACE\""],
+      "max_rounds": 10,
+      "task": "写个脚本统计文本行数",
+      "expected_conditions": [
+        "final.ok == true",
+        "final.task_completeness.decision == 'proceed'",
+        "final.assumptions records implementation language and representative verification",
+        "final.verification.ok == true",
+        "final.requirement_atom_summary.required_failed == 0"
+      ],
+      "include_workspace_in_audit": true
+    },
+    {
+      "id": "T10",
+      "thread_id": "regression_t10_clarification",
+      "title": "Ambiguous prompt controlled stop",
+      "title_zh": "模糊 Prompt 受控追问",
+      "purpose_zh": "验证缺少核心行为的任务在任何源码写入前暂停，并返回可恢复的问题。",
+      "workspace": {"kind": "temporary", "template": "$REGRESSION_WORK_ROOT/t10_clarification"},
+      "setup_commands": ["rm -rf \"$WORKSPACE\"", "mkdir -p \"$WORKSPACE\""],
+      "max_rounds": 8,
+      "task": "写个脚本",
+      "expected_conditions": [
+        "final.ok == false",
+        "final.outcome == 'clarification_required'",
+        "final.controlled_failure == true",
+        "final.clarification_questions is not empty",
+        "final.write_scope_audit.source_changed_files == []"
+      ],
+      "include_workspace_in_audit": true
+    },
+    {
+      "id": "T11",
+      "thread_id": "regression_t11_colloquial_inspect",
+      "title": "Colloquial read-only inspection",
+      "title_zh": "口语化只读项目查看",
+      "purpose_zh": "验证口语化查看请求自动采用只读假设、生成有路径证据的分析并保存项目记忆。",
+      "workspace": {"kind": "temporary", "template": "$REGRESSION_WORK_ROOT/t11_colloquial_inspect"},
+      "setup_commands": [
+        "rm -rf \"$WORKSPACE\"",
+        "mkdir -p \"$WORKSPACE/tests\"",
+        "printf '%s\\n' 'def add(a, b):' '    return a + b' > \"$WORKSPACE/app.py\"",
+        "printf '%s\\n' 'from app import add' '' 'def test_add():' '    assert add(1, 2) == 3' > \"$WORKSPACE/tests/test_app.py\"",
+        "printf '%s\\n' '# Tiny arithmetic example' > \"$WORKSPACE/README.md\""
+      ],
+      "max_rounds": 8,
+      "task": "看看这个项目",
+      "expected_conditions": [
+        "final.ok == true",
+        "final.mode == 'analyze'",
+        "final.read_only == true",
+        "final.analysis_quality_ok == true",
+        "final.write_scope_audit.source_changed_files == []",
+        "final.project_memory.task_summaries_count >= 1"
+      ],
+      "include_workspace_in_audit": true
+    }
+  ]
+}

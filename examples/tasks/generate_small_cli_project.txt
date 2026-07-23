@@ -1,0 +1,1 @@
+在当前空 workspace 中生成一个小型 Python CLI 工具，功能是通讯录管理，支持添加、删除、查询、列出联系人。要求有 main.py、业务模块、README.md、pytest 测试，并且 python main.py --demo 能完成非交互演示。

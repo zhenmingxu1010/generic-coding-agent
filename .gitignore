@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Agent runtime artifacts
+.coding_agent/
+.coding_agent_test/
+.coding_agent_chats/
+.agent_runs/
+agent_audit/
+agent_regression_workspaces/
+*.zip
+
+# Private local configuration
+configs/*.local.yaml
+configs/*.local.yml
+
+# Local environment
+.env
+.venv/
+venv/
+env/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

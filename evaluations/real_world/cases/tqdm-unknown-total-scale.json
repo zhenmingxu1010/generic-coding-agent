@@ -1,0 +1,23 @@
+{
+  "version": "real_world_case_v1",
+  "case_id": "tqdm-unknown-total-scale",
+  "project": "tqdm",
+  "repository_url": "https://github.com/tqdm/tqdm.git",
+  "buggy_commit": "03b347646492131d889871939b40457d29147216",
+  "fixed_commit": "964dee631d0ed30e2f799b42fc58ba5e73795a08",
+  "task": "Fix progress formatting when total is unknown and unit_scale is a numeric factor. Iterating a generator with unit_scale=10 currently tries to multiply None and crashes. Preserve scaling for known totals and do not modify tests.",
+  "hidden_test_paths": [
+    "tqdm/tests/tests_tqdm.py"
+  ],
+  "test_command": [
+    "{python}",
+    "-m",
+    "pytest",
+    "-q",
+    "tqdm/tests/tests_tqdm.py::test_nototal"
+  ],
+  "protected_globs": [
+    "tqdm/tests/**"
+  ],
+  "timeout_seconds": 120
+}

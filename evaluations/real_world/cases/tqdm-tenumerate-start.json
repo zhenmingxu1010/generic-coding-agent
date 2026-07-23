@@ -1,0 +1,30 @@
+{
+  "version": "real_world_case_v1",
+  "case_id": "tqdm-tenumerate-start",
+  "project": "tqdm",
+  "repository_url": "https://github.com/tqdm/tqdm.git",
+  "buggy_commit": "8cc777fe8401a05d07f2c97e65d15e4460feab88",
+  "fixed_commit": "c0dcf39b046d1b4ff6de14ac99ad9a1b10487512",
+  "task": "Fix tenumerate(iterable, start). Its start argument must behave like the second argument of Python's enumerate, but it is currently passed into tqdm and can cause a TypeError. Preserve the existing progress options and do not modify tests.",
+  "hidden_test_paths": [
+    "tqdm/tests/tests_contrib.py"
+  ],
+  "hidden_files": [
+    {
+      "path": ".real_world_hidden/test_tenumerate_compat.py",
+      "content": "import sys\nimport types\n\nfrom tqdm.contrib import tenumerate\n\n\ndef test_numpy_special_case_keeps_index_value_shape():\n    fake_numpy = types.ModuleType('numpy')\n\n    class ndarray(object):\n        pass\n\n    class FakeArray(ndarray):\n        def __len__(self):\n            return 1\n\n    fake_numpy.ndarray = ndarray\n    fake_numpy.ndenumerate = lambda _array: iter([((0,), 'value')])\n    previous = sys.modules.get('numpy')\n    sys.modules['numpy'] = fake_numpy\n    try:\n        result = list(tenumerate(\n            FakeArray(),\n            start=5,\n            tqdm_class=lambda iterable, **_kwargs: iterable,\n        ))\n    finally:\n        if previous is None:\n            sys.modules.pop('numpy', None)\n        else:\n            sys.modules['numpy'] = previous\n    assert result == [((0,), 'value')]\n"
+    }
+  ],
+  "test_command": [
+    "{python}",
+    "-m",
+    "pytest",
+    "-q",
+    "tqdm/tests/tests_contrib.py::test_enumerate",
+    ".real_world_hidden/test_tenumerate_compat.py"
+  ],
+  "protected_globs": [
+    "tqdm/tests/**"
+  ],
+  "timeout_seconds": 120
+}

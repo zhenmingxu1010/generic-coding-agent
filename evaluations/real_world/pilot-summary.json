@@ -1,0 +1,50 @@
+{
+  "version": "real_world_summary_v1",
+  "run_date": "2026-07-23",
+  "total": 3,
+  "resolved": 3,
+  "environment_unreachable": 0,
+  "agent_reported_ok": 3,
+  "hidden_tests_passed": 3,
+  "protected_mutation_cases": 0,
+  "average_agent_duration_seconds": 36.454,
+  "cases": [
+    {
+      "case_id": "pysnooper-file-output",
+      "project": "PySnooper",
+      "status": "resolved",
+      "environment_reachable": true,
+      "agent_reported_ok": true,
+      "agent_stopped_reason": "verified_ok",
+      "hidden_tests_passed": true,
+      "protected_mutations": [],
+      "changed_project_paths": ["pysnooper/pysnooper.py"],
+      "agent_duration_seconds": 42.716
+    },
+    {
+      "case_id": "tqdm-tenumerate-start",
+      "project": "tqdm",
+      "status": "resolved",
+      "environment_reachable": true,
+      "agent_reported_ok": true,
+      "agent_stopped_reason": "verified_ok",
+      "hidden_tests_passed": true,
+      "protected_mutations": [],
+      "changed_project_paths": ["tqdm/contrib/__init__.py"],
+      "agent_duration_seconds": 37.069
+    },
+    {
+      "case_id": "tqdm-unknown-total-scale",
+      "project": "tqdm",
+      "status": "resolved",
+      "environment_reachable": true,
+      "agent_reported_ok": true,
+      "agent_stopped_reason": "verified_ok",
+      "hidden_tests_passed": true,
+      "protected_mutations": [],
+      "changed_project_paths": ["tqdm/_tqdm.py"],
+      "agent_duration_seconds": 29.576
+    }
+  ],
+  "scope_note": "A three-case localized repair pilot is evidence of basic real-repository repair ability, not a claim of broad SWE-bench performance."
+}

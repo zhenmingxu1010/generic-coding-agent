@@ -1,0 +1,26 @@
+name: Feature request
+description: Propose a general-purpose improvement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What general problem should the project solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the interface, evidence, safety impact, and alternatives.
+    validations:
+      required: true
+  - type: textarea
+    id: generality
+    attributes:
+      label: Generality
+      description: Explain why this is not specific to one repository or benchmark.
+    validations:
+      required: true

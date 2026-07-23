@@ -1,0 +1,22 @@
+$ python scripts/collect_regression_audits.py --audit-dir .agent_runs/release-matrix/final-audits --strict
+PASS T01  read-only repository analysis
+PASS T02  isolated generation + runtime repair (round 1)
+PASS T03  CLI argument contract
+PASS T04  interface repair
+PASS T05  zero tests rejected as controlled failure
+PASS T06  no existing-source pollution
+PASS T07  existing bug repair
+PASS T08  greenfield CLI project
+PASS T09  short prompt with recorded assumptions
+PASS T10  ambiguous prompt requests clarification
+PASS T11  colloquial read-only inspection
+RESULT    11/11 detailed validators passed
+
+$ python scripts/release_check.py
+PASS source_scan       0 credential/private-path hits
+PASS compile
+PASS pytest            475 passed
+PASS build             wheel + source distribution
+PASS distributions
+PASS wheel_smoke       isolated installed-wheel import + 3 CLIs
+RESULT                  local v0.1.0-alpha gate passed
