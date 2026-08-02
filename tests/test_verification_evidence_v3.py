@@ -250,9 +250,46 @@ def test_passing_project_tests_are_reused_as_matching_requirement_evidence(monke
     )
 
     assert claims["requirement:all_tests_pass"]["status"] == "passed"
-    assert claims["requirement:cli_unchanged"]["status"] == "passed"
-    assert claims["requirement:cli_unchanged"]["cited_steps"] == ["pytest"]
+    assert claims["requirement:cli_unchanged"]["status"] == "unverified"
     assert claims["requirement:uncovered_behavior"]["status"] == "unverified"
+
+
+def test_one_generic_test_name_token_does_not_prove_specific_behavior(
+    monkeypatch,
+    tmp_path: Path,
+):
+    atom = {
+        "id": "requirement:cleanup",
+        "type": "behavior",
+        "description": "A failed hook removes the partial output directory.",
+        "verify_hint": "Run a failed hook and confirm the directory is absent.",
+        "data": {"evidence_mode": "execution"},
+    }
+    state = {
+        "workspace": str(tmp_path),
+        "task": "Clean partial output after a failed hook.",
+        "task_contract": {"requirement_atoms": [atom]},
+        "file_plan": {"verify_steps": []},
+        "test_results": {"runs": [{
+            "name": "pytest",
+            "ok": True,
+            "total": 1,
+            "testcases": [{
+                "test": "tests.test_hooks::test_run_hook",
+                "status": "passed",
+            }],
+        }]},
+    }
+    _Client.response = json.dumps({"claims": []})
+    monkeypatch.setattr(behavior_review, "OpenAICompatClient", _Client)
+
+    claims = behavior_review.review_behavior_evidence(
+        state,
+        [{"name": "pytest", "returncode": 0, "stdout": "1 passed"}],
+        [],
+    )
+
+    assert claims[atom["id"]]["status"] == "unverified"
 
 
 def test_document_contract_is_not_proven_by_a_partially_matching_test_name(monkeypatch, tmp_path: Path):
@@ -503,6 +540,37 @@ def test_oracle_cannot_reject_grounded_scenario_because_implementation_failed(mo
     assert reviews["public_behavior"]["status"] == "grounded"
 
 
+def test_oracle_cannot_use_observed_missing_behavior_to_invalidate_scenario(monkeypatch, tmp_path: Path):
+    state = _behavior_state(tmp_path)
+
+    _Client.response = json.dumps({
+        "step_reviews": [{
+            "name": "public_behavior",
+            "status": "unsupported",
+            "reason": (
+                "The actual output shows the operation succeeded unexpectedly; "
+                "the code did not raise the required exception."
+            ),
+        }]
+    })
+    monkeypatch.setattr(behavior_review, "OpenAICompatClient", _Client)
+
+    reviews = behavior_review.review_failed_verification_oracles(
+        state,
+        state["file_plan"]["verify_steps"],
+        [{
+            "name": "public_behavior",
+            "returncode": 1,
+            "stdout": "ERROR: operation succeeded unexpectedly",
+            "stderr": "",
+            "timed_out": False,
+            "executed": True,
+        }],
+    )
+
+    assert reviews["public_behavior"]["status"] == "grounded"
+
+
 def test_oracle_can_still_reject_behavior_absent_from_contract(monkeypatch, tmp_path: Path):
     state = _behavior_state(tmp_path)
 
@@ -524,6 +592,36 @@ def test_oracle_can_still_reject_behavior_absent_from_contract(monkeypatch, tmp_
             "stdout": "",
             "stderr": "unsupported option",
             "timed_out": False,
+            "executed": True,
+        }],
+    )
+
+    assert reviews["public_behavior"]["status"] == "unsupported"
+
+
+def test_oracle_preserves_rejection_for_probe_with_missing_required_argument(
+    monkeypatch, tmp_path: Path,
+):
+    state = _behavior_state(tmp_path)
+    _Client.response = json.dumps({
+        "step_reviews": [{
+            "name": "public_behavior",
+            "status": "unsupported",
+            "reason": (
+                "The probe script calls run('x') without the required context "
+                "argument, causing TypeError, so it does not exercise the actual signature."
+            ),
+        }]
+    })
+    monkeypatch.setattr(behavior_review, "OpenAICompatClient", _Client)
+
+    reviews = behavior_review.review_failed_verification_oracles(
+        state,
+        state["file_plan"]["verify_steps"],
+        [{
+            "name": "public_behavior",
+            "returncode": 1,
+            "stderr": "TypeError: missing required positional argument: context",
             "executed": True,
         }],
     )
@@ -689,10 +787,34 @@ def test_verification_replan_demands_direct_contract_boundary_scenarios(monkeypa
     assert "sandbox.files" in system
     assert "never use" in system and "python -c" in system
     assert "do not resubmit the same pytest command" in prompt
-    assert "no more than four steps" in prompt
+    assert "no more than two steps" in prompt
     assert "minimal empty wrong-type boundary value" in prompt
     assert "tests.test_cli::test_valid_array" in prompt
     assert "README.md" in prompt
+
+
+def test_verification_planner_uses_small_batches_with_probe_sized_output_budget(
+    monkeypatch, tmp_path: Path,
+):
+    state = _behavior_state(tmp_path)
+    state["file_plan"]["verify_steps"] = []
+
+    class _CapturingClient(_Client):
+        kwargs = {}
+
+        def chat(self, messages, **kwargs):
+            self.__class__.kwargs = kwargs
+            self.__class__.messages = messages
+            return json.dumps({"verify_steps": []})
+
+    monkeypatch.setattr(behavior_review, "OpenAICompatClient", _CapturingClient)
+
+    behavior_review.supplement_verification_steps(state)
+
+    assert "at most two minimal steps" in _CapturingClient.messages[0]["content"]
+    assert "exact signature and execution preconditions" in _CapturingClient.messages[0]["content"]
+    assert "inject or monkeypatch the lower-level" in _CapturingClient.messages[0]["content"]
+    assert _CapturingClient.kwargs["max_tokens"] == 4000
 
 
 def test_compact_review_result_preserves_actual_custom_exit_code():

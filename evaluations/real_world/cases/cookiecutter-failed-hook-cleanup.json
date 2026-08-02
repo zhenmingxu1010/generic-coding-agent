@@ -1,0 +1,43 @@
+{
+  "version": "real_world_case_v2",
+  "case_id": "cookiecutter-failed-hook-cleanup",
+  "project": "Cookiecutter",
+  "categories": [
+    "repair",
+    "multi-file",
+    "error-propagation",
+    "cleanup"
+  ],
+  "expected_change_shape": "multi_file",
+  "repository_url": "https://github.com/cookiecutter/cookiecutter.git",
+  "buggy_commit": "9568ab6ecd2d6836646006c59473c4a4ac0dee04",
+  "fixed_commit": "457a1a4e862aab4102b644ff1d2b2e2b5a766b3c",
+  "task": "Replace exit-status-based failed hook handling with a dedicated Cookiecutter exception named FailedHookException in the hook execution layer. When a pre-generation hook exits non-zero, run_hook() must raise FailedHookException instead of returning a failure status, and its diagnostic message must contain the phrase 'Hook script failed'. generate_files() must catch FailedHookException, remove the partially created output directory, return None, and stop cleanly without propagating it. Preserve successful-hook and no-hook behavior, and do not modify tests.",
+  "hidden_test_paths": [
+    "tests/test_hooks.py"
+  ],
+  "hidden_files": [
+    {
+      "path": ".real_world_hidden/test_cookiecutter_failed_hook_cleanup.py",
+      "content": "from cookiecutter import exceptions, generate\n\n\ndef test_failed_pre_generation_hook_removes_partial_project(tmp_path, monkeypatch):\n    repository = tmp_path / 'template'\n    template = repository / '{{cookiecutter.project_name}}'\n    template.mkdir(parents=True)\n    (template / 'README.txt').write_text('generated\\n', encoding='utf-8')\n    output = tmp_path / 'output'\n    output.mkdir()\n\n    def fail_pre_hook(hook_name, _project_dir, _context):\n        if hook_name == 'pre_gen_project':\n            raise exceptions.FailedHookException('pre-generation hook failed')\n\n    monkeypatch.setattr(generate, 'run_hook', fail_pre_hook)\n\n    result = generate.generate_files(\n        str(repository),\n        context={'cookiecutter': {'project_name': 'demo'}},\n        output_dir=str(output),\n    )\n\n    assert result is None\n    assert not (output / 'demo').exists()\n"
+    }
+  ],
+  "test_command": [
+    "{python}",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/test_hooks.py::TestExternalHooks::test_run_failing_hook",
+    ".real_world_hidden/test_cookiecutter_failed_hook_cleanup.py"
+  ],
+  "protected_globs": [
+    "tests/**"
+  ],
+  "protected_ignore_globs": [
+    "tests/test-replay/*.json"
+  ],
+  "test_environment": {
+    "DISABLE_NETWORK_TESTS": "1"
+  },
+  "timeout_seconds": 120
+}

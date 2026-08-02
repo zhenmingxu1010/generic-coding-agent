@@ -1,7 +1,14 @@
 {
-  "version": "real_world_case_v1",
+  "version": "real_world_case_v2",
   "case_id": "tqdm-tenumerate-start",
   "project": "tqdm",
+  "categories": [
+    "repair",
+    "localized",
+    "api-semantics",
+    "compatibility"
+  ],
+  "expected_change_shape": "localized",
   "repository_url": "https://github.com/tqdm/tqdm.git",
   "buggy_commit": "8cc777fe8401a05d07f2c97e65d15e4460feab88",
   "fixed_commit": "c0dcf39b046d1b4ff6de14ac99ad9a1b10487512",

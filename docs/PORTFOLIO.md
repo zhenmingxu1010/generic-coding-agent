@@ -14,9 +14,16 @@
 - Created an offline regression suite and an eleven-scenario real-model matrix
   covering analysis, generation, modification, negative verification,
   short-prompt defaults, clarification, memory, and source-pollution checks.
+- Built an evaluator-owned real-repository harness that separates hidden
+  acceptance from Agent success claims and reports final-gate precision,
+  protected mutations, modification scope, latency, calls, and token usage.
 
-Replace general statements with the exact test count and live model result from
-the release commit before submitting a résumé.
+Current public evidence: 536 offline tests, 11/11 model-backed scenario
+validators, and 4/4 externally accepted historical repairs, including one
+three-file change. The Agent claimed success in 3/4 cases and conservatively
+rejected the accepted multi-file repair because direct verification evidence
+remained incomplete. This pilot is too small to present as broad benchmark
+performance.
 
 ## Five-minute interview structure
 

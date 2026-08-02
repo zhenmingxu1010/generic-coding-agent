@@ -12,6 +12,9 @@ from coding_agent.scope.write_scope_audit import build_write_scope_audit
 from coding_agent.verification.plan_grounding import compact_grounding_source_catalog
 
 
+MAX_VERIFICATION_PLAN_ATTEMPTS = 3
+
+
 VERIFICATION_PLAN_SYSTEM = """You plan execution evidence for a general coding agent.
 Return JSON only with this schema:
 {
@@ -35,7 +38,7 @@ Return JSON only with this schema:
 }
 Rules:
 - Add only steps needed for uncovered requirements with evidence_mode=execution.
-- Return at most four minimal steps. Prefer one high-information boundary
+- Return at most two minimal steps in this planning call. Prefer one high-information boundary
   scenario over enumerating many already-covered examples.
 - Do not add VCS or shell commands to prove runtime-evidence constraints; the
   runtime evidence supplied in the prompt is authoritative for those facts.
@@ -49,6 +52,10 @@ Rules:
   `sandbox.files` and invoke it as `python relative_probe.py`; never use
   `python -c`. The probe may use assertions or deliberately leave a documented
   exception uncaught, paired with its documented `success_exit_codes`.
+- Match the callable's exact signature and execution preconditions from the
+  supplied repository source. In particular, preserve required working
+  directories, context managers, environment, and discovery roots; passing a
+  directory argument does not imply that a function changes into it.
 - Work inside the workspace. Use relative paths.
 - For disposable outputs, use {verification_dir}/name.ext.
 - Use a sandbox when verification needs missing/replaced inputs or another
@@ -64,6 +71,22 @@ Rules:
   shape, include direct positive and negative boundary scenarios. For JSON
   container requirements, exercise at least one valid value and one valid-JSON
   value of the wrong top-level type (for example object versus array).
+- Keep causal layers separate. When one requirement says a lower-level
+  operation raises or propagates an error and another says its caller cleans
+  up, translates, or stops, create separate direct scenarios for the two
+  boundaries. Do not use one high-level exception to claim that an intermediate
+  callable raised it.
+- For a caller's catch/cleanup boundary, inject or monkeypatch the lower-level
+  dependency to raise the exact required exception and assert that the injected
+  dependency was called. Do not rely on a complex fixture merely hoping to
+  trigger the lower-level failure; a normal success return then proves only
+  that the failure stimulus was never reached.
+- Cleanup checks must inspect the actual output root or derive the produced
+  path from authoritative project behavior. Do not guess an output child name;
+  checking the wrong path is vacuous.
+- Do not invent pytest node selectors. Reuse an exact selector only when that
+  test name appears in the supplied prior executed test cases. Otherwise,
+  create a direct disposable scenario with `sandbox.files`.
 - For a wrong container-type scenario, prefer the minimal empty value (such as
   an empty object instead of a populated object). This detects implementations
   that only reject the contained items and accidentally accept a vacuously
@@ -97,6 +120,10 @@ Rules:
 - A command that exercises an unstated option, input mode, API, edge case, or
   behavior is unsupported even if it could be a useful feature.
 - Judge the verification scenario, not whether the implementation could be changed to pass it.
+- A catch/cleanup scenario that receives a normal success result must prove its
+  injected failure dependency was called. Without that proof, treat the
+  scenario as unsupported/ambiguous because the failure stimulus may never
+  have been reached.
 - Use ambiguous when the supplied evidence is insufficient. Never assume an
   unstated behavior is required.
 """
@@ -122,6 +149,10 @@ Rules:
 - A step may support a requirement only when its expected behavior follows
   from its cited basis. Binding `verifies` to an atom does not make an
   unrelated or expanded scenario relevant.
+- End-to-end observation proves the public boundary it invokes, not every
+  intermediate error-propagation claim. If a requirement names a lower-level
+  operation that raises or propagates an error, a high-level caller that
+  manufactures the same error is insufficient evidence for that atom.
 - For evidence_mode=execution, passed requires direct observable evidence from
   at least one successful step whose `verifies` list contains that atom ID.
 - For evidence_mode=runtime, passed requires an exact cited runtime evidence
@@ -329,7 +360,7 @@ def _pytest_requirement_evidence(state: dict[str, Any], atoms: list[dict[str, An
         matched = [
             case
             for case, tokens in case_tokens.items()
-            if atom_tokens.intersection(tokens - common_tokens)
+            if len(atom_tokens.intersection(tokens - common_tokens)) >= 2
         ]
         if matched:
             evidence[atom_id] = {
@@ -578,18 +609,66 @@ def review_failed_verification_oracles(
         # failures as implementation evidence; unsupported scenarios still
         # remain rejectable when the reason points to absent/unstated contract
         # behavior.
+        contract_absence_words = (
+            "not stated",
+            "never states",
+            "unstated",
+            "absent from",
+            "no evidence",
+            "not supported by the cited",
+            "not in the task",
+            "not required by",
+        )
         implementation_words = (
             "current implementation",
             "the implementation",
             "implementation's",
             "implementation does not",
             "implementation fails",
+            "actual implementation behavior",
+            "actual output",
             "function fails",
             "code fails",
+            "code did not",
+            "code does not",
+            "did not raise",
+            "didn't raise",
+            "failed to raise",
+            "succeeded unexpectedly",
             "runtime error",
             "traceback",
+            "returncode",
+            "stdout",
+            "stderr",
         )
-        if status != "grounded" and any(word in reason.lower() for word in implementation_words):
+        harness_problem_words = (
+            "without the required",
+            "missing required positional",
+            "does not exercise the actual",
+            "test does not exercise",
+            "probe script calls",
+            "invalid test",
+            "invalid citation",
+            "fixture does not",
+            "template structure that does not match",
+            "setup does not",
+            "path error",
+            "file not found",
+            "probe script itself could not be executed",
+            "failure stimulus",
+            "was never reached",
+            "normal success return",
+        )
+        reason_lower = reason.lower()
+        blames_implementation = any(word in reason_lower for word in implementation_words)
+        identifies_absent_contract = any(word in reason_lower for word in contract_absence_words)
+        identifies_harness_problem = any(word in reason_lower for word in harness_problem_words)
+        if (
+            status != "grounded"
+            and blames_implementation
+            and not identifies_absent_contract
+            and not identifies_harness_problem
+        ):
             status = "grounded"
             reason = "accepted grounding must not be rejected because the current implementation failed"
         reviews[name] = {
@@ -645,7 +724,7 @@ def supplement_verification_steps(state: dict[str, Any]) -> dict[str, Any]:
         missing = [atom for atom in atoms if str(atom.get("id")) not in _covered_ids(steps)]
     if not missing:
         return {"added": [], "missing": [], "requested_requirement_ids": []}
-    if int(state.get("verification_plan_attempts", 0) or 0) >= 2:
+    if int(state.get("verification_plan_attempts", 0) or 0) >= MAX_VERIFICATION_PLAN_ATTEMPTS:
         return {
             "added": [],
             "missing": [str(atom.get("id")) for atom in missing],
@@ -665,7 +744,7 @@ def supplement_verification_steps(state: dict[str, Any]) -> dict[str, Any]:
         replan_guidance = (
             "Previous evidence was reviewed as unverified. Replace broad suite-level evidence "
             "with direct public scenarios for each missing behavior; do not resubmit the same "
-            "pytest command. Return no more than four steps and do not use python -c; put Python "
+            "pytest command. Return no more than two steps in this call and do not use python -c; put Python "
             "callable probes in sandbox.files and run the script by relative path. Focus only "
             "on documented behavior not named by the prior executed test cases. For any documented "
             "input type or shape, exercise the minimal empty wrong-type boundary value using sandbox "
@@ -679,12 +758,19 @@ def supplement_verification_steps(state: dict[str, Any]) -> dict[str, Any]:
         for case in run.get("testcases") or []
         if isinstance(case, dict) and case.get("test")
     ][:80]
+    rejected_plan_steps = [
+        item
+        for item in (state.get("skipped_file_plan_verify_steps") or [])[-6:]
+        if isinstance(item, dict)
+    ]
     prompt = (
         f"Task:\n{state.get('task')}\n\n"
         f"{replan_guidance}"
         f"Missing requirements:\n{json.dumps(missing, ensure_ascii=False, indent=2)}\n\n"
         f"Existing verification steps:\n{json.dumps(steps, ensure_ascii=False, indent=2)}\n\n"
         f"Prior executed test cases (names only):\n{json.dumps(prior_testcases, ensure_ascii=False)}\n\n"
+        f"Recently rejected verification proposals (do not repeat them):\n"
+        f"{json.dumps(rejected_plan_steps, ensure_ascii=False, indent=2)}\n\n"
         f"Runtime evidence sources (do not duplicate with commands):\n"
         f"{json.dumps(build_runtime_evidence(state), ensure_ascii=False, indent=2)}\n\n"
         f"Task-relevant context:\n{truncate(state.get('context_summary', ''), 8000)}"
@@ -698,7 +784,11 @@ def supplement_verification_steps(state: dict[str, Any]) -> dict[str, Any]:
                 {"role": "user", "content": prompt},
             ],
             purpose="verification_plan",
-            max_tokens=1800,
+            # Sandboxed callable probes contain source code and routinely need
+            # more room than ordinary argv-only steps. A truncated JSON object
+            # silently yields no usable evidence, so request enough output for
+            # the deliberately small (at most two-step) batch.
+            max_tokens=4000,
         )
         obj = extract_json_object(text)
         proposed = obj.get("verify_steps") or []

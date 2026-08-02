@@ -74,6 +74,36 @@ def test_noop_modify_still_reviews_allowed_existing_targets(tmp_path: Path):
     assert deliverable_review_needed(state) is True
 
 
+def test_incomplete_evidence_review_includes_untouched_allowed_targets(monkeypatch, tmp_path: Path):
+    state = _state(tmp_path)
+    (tmp_path / "helper.py").write_text("def helper():\n    return None\n", encoding="utf-8")
+    state["changed_files"] = ["tool.py"]
+    state["mode"] = "modify"
+    state["scope_contract"] = {"allowed_modify_paths": ["tool.py", "helper.py"]}
+    state["requirement_atom_summary"] = {"required_unverified": 1}
+    _Client.response = json.dumps({"blocking_issues": [], "warnings": [], "summary": "ok"})
+    monkeypatch.setattr(review_module, "OpenAICompatClient", _Client)
+
+    out = deliverable_review_node(state)
+
+    assert out["deliverable_review"]["reviewed_files"] == ["helper.py", "tool.py"]
+
+
+def test_verified_modify_review_includes_untouched_allowed_targets(monkeypatch, tmp_path: Path):
+    state = _state(tmp_path)
+    (tmp_path / "helper.py").write_text("def helper():\n    return None\n", encoding="utf-8")
+    state["changed_files"] = ["tool.py"]
+    state["mode"] = "modify"
+    state["scope_contract"] = {"allowed_modify_paths": ["tool.py", "helper.py"]}
+    state["requirement_atom_summary"] = {"required_unverified": 0}
+    _Client.response = json.dumps({"blocking_issues": [], "warnings": [], "summary": "ok"})
+    monkeypatch.setattr(review_module, "OpenAICompatClient", _Client)
+
+    out = deliverable_review_node(state)
+
+    assert out["deliverable_review"]["reviewed_files"] == ["helper.py", "tool.py"]
+
+
 def test_deliverable_review_turns_grounded_cross_file_contradiction_into_repair(monkeypatch, tmp_path: Path):
     state = _state(tmp_path)
     _Client.response = json.dumps({
@@ -114,6 +144,32 @@ def test_deliverable_review_drops_issues_for_paths_not_supplied(monkeypatch, tmp
     assert out["deliverable_review"]["ok"] is True
     assert out["deliverable_review"]["blocking_issues"] == []
     assert route_after_deliverable_review(out) == "report"
+
+
+def test_clean_deliverable_review_cannot_turn_failed_verification_into_success(
+    monkeypatch,
+    tmp_path: Path,
+):
+    state = _state(tmp_path)
+    state["verification"] = {"ok": False, "results": []}
+    state["requirement_atom_summary"] = {
+        "required_total": 2,
+        "required_failed": 0,
+        "required_unverified": 2,
+    }
+    _Client.response = json.dumps({
+        "blocking_issues": [],
+        "warnings": [],
+        "summary": "no source contradiction found",
+    })
+    monkeypatch.setattr(review_module, "OpenAICompatClient", _Client)
+
+    out = deliverable_review_node(state)
+
+    assert route_after_deliverable_review(out) == "report"
+    assert out["stopped_reason"] == "verification_evidence_incomplete"
+    assert out["failure"]["failure_type"] == "verification_evidence_incomplete"
+    assert out["needs_verification"] is False
 
 
 def test_deliverable_review_drops_self_negating_blocking_issue(monkeypatch, tmp_path: Path):
@@ -207,6 +263,30 @@ def test_deliverable_review_drops_evidence_that_calls_itself_false_positive(monk
     out = deliverable_review_node(state)
 
     assert out["deliverable_review"]["ok"] is True
+
+
+def test_deliverable_review_drops_issue_that_admits_required_phrase_is_present(
+    monkeypatch, tmp_path: Path,
+):
+    state = _state(tmp_path)
+    _Client.response = json.dumps({
+        "blocking_issues": [{
+            "path": "tool.py",
+            "message": (
+                "The message does not contain the phrase as a standalone "
+                "substring; the path follows it, but the required phrase is present."
+            ),
+            "evidence": "raise Error('required phrase ' + path)",
+        }],
+        "warnings": [],
+        "summary": "No blocking issues found.",
+    })
+    monkeypatch.setattr(review_module, "OpenAICompatClient", _Client)
+
+    out = deliverable_review_node(state)
+
+    assert out["deliverable_review"]["ok"] is True
+    assert out["deliverable_review"]["blocking_issues"] == []
 
 
 def test_deliverable_review_receives_read_only_reference_contract(monkeypatch, tmp_path: Path):
@@ -313,3 +393,88 @@ def test_clean_primary_contract_review_gets_independent_counterexample_pass(monk
     assert out["deliverable_review"]["ok"] is False
     assert out["failure"]["target_file"] == "tool.py"
     assert route_after_deliverable_review(out) == "repair"
+
+
+def test_clean_multifile_task_review_gets_independent_counterexample_pass(monkeypatch, tmp_path: Path):
+    state = _state(tmp_path)
+    state["mode"] = "modify"
+    state["changed_files"] = ["tool.py"]
+    state["scope_contract"] = {
+        "allowed_modify_paths": ["tool.py", "helper.py"],
+    }
+    (tmp_path / "helper.py").write_text(
+        "def execute():\n    return 1\n",
+        encoding="utf-8",
+    )
+    state["task_contract"] = {
+        "objective": "Convert execution failure to an exception and clean up.",
+        "requirement_atoms": [
+            {
+                "id": "requirement:raise",
+                "type": "behavior",
+                "required": True,
+                "description": "The executor raises on failure.",
+            },
+            {
+                "id": "requirement:cleanup",
+                "type": "behavior",
+                "required": True,
+                "description": "The caller cleans partial output.",
+            },
+        ],
+    }
+    _SequencedClient.calls = []
+    _SequencedClient.responses = [
+        json.dumps({"blocking_issues": [], "warnings": [], "summary": "looks good"}),
+        json.dumps({
+            "blocking_issues": [{
+                "path": "helper.py",
+                "message": "the executor still returns a failure code instead of raising",
+                "evidence": "execute returns 1 and contains no exception conversion",
+            }],
+            "warnings": [],
+            "summary": "lower-layer counterexample found",
+        }),
+    ]
+    monkeypatch.setattr(review_module, "OpenAICompatClient", _SequencedClient)
+
+    out = deliverable_review_node(state)
+
+    assert len(_SequencedClient.calls) == 2
+    assert _SequencedClient.calls[1][1]["purpose"] == "deliverable_task_counterexample"
+    assert out["deliverable_review"]["ok"] is False
+    assert out["failure"]["target_file"] == "helper.py"
+
+
+def test_task_counterexample_prompt_checks_new_public_symbol_names(
+    monkeypatch, tmp_path: Path,
+):
+    state = _state(tmp_path)
+    state["mode"] = "modify"
+    state["changed_files"] = ["tool.py"]
+    state["scope_contract"] = {
+        "allowed_modify_paths": ["tool.py", "helper.py"],
+    }
+    (tmp_path / "helper.py").write_text(
+        "class ExistingException(Exception):\n    pass\n",
+        encoding="utf-8",
+    )
+    state["task_contract"] = {
+        "requirement_atoms": [
+            {"id": "requirement:new_error", "type": "behavior", "required": True},
+            {"id": "requirement:caller", "type": "behavior", "required": True},
+        ],
+    }
+    _SequencedClient.calls = []
+    _SequencedClient.responses = [
+        json.dumps({"blocking_issues": [], "warnings": [], "summary": "ok"}),
+        json.dumps({"blocking_issues": [], "warnings": [], "summary": "ok"}),
+    ]
+    monkeypatch.setattr(review_module, "OpenAICompatClient", _SequencedClient)
+
+    deliverable_review_node(state)
+
+    system = _SequencedClient.calls[1][0][0]["content"]
+    assert "newly introduced public names" in system
+    assert "exact task-specified name" in system
+    assert "may return None" in system

@@ -112,6 +112,27 @@ def test_source_modify_generic_pytest_is_not_retargeted_to_registry(tmp_path: Pa
     assert targets == []
 
 
+def test_pytest_target_preserves_node_selector(tmp_path: Path):
+    state = {
+        "workspace": str(tmp_path),
+        "mode": "modify",
+        "task_intent": {"source_modify_intent": True},
+    }
+
+    targets = _pytest_targets_for_command(
+        state,
+        "specific_behavior",
+        [
+            "python",
+            "-m",
+            "pytest",
+            "tests/test_hooks.py::test_missing_scenario",
+        ],
+    )
+
+    assert targets == ["tests/test_hooks.py::test_missing_scenario"]
+
+
 def test_parse_junit_xml_extracts_structured_failure(tmp_path: Path):
     report = tmp_path / "pytest.xml"
     report.write_text(
@@ -485,6 +506,10 @@ def test_failed_exact_edit_on_current_agent_file_forces_full_rewrite(tmp_path: P
 
     assert out["last_tool_result"]["ok"] is False
     assert out["last_tool_result"]["message"] == "old_text not found"
+    assert "VALUE = 1" in (
+        out["last_tool_result"]["data"]["nearest_current_context"]
+    )
+    assert out["last_tool_result"]["data"]["failed_old_text"] == "MISSING = 1\n"
     force = out["force_repair_action"]
     assert force["required_tool"] == "write_file"
     assert force["path"] == "script.py"

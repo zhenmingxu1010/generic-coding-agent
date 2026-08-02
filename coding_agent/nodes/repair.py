@@ -36,9 +36,20 @@ Rules:
   a current-agent generated file. When one file needs multiple known changes,
   use edit_file.replacements to apply all exact replacements atomically before
   verification.
+- Never use write_file to replace a pre-existing project source file. Preserve
+  its interfaces and use edit_file with exact, minimal replacements instead.
 - Minimize the behavioral diff. Preserve existing special-case branches,
   return shapes, aliases, and adjacent control flow unless the failed
   requirement or execution evidence directly implicates them.
+- Static deliverable-review findings are secondary to explicit task behavior
+  and executed evidence. Never remove behavior required by the task merely to
+  resolve a redundancy, dead-code, or unused-import observation. If behavior
+  is implemented in the wrong layer, preserve it while relocating the owning
+  implementation and remove only the incorrect duplicate.
+- A new helper or wrapper is not a repair when the real public entry point
+  never calls it. Patch the existing reachable execution path identified by
+  the task or failure evidence; remove an unrequested disconnected alternate
+  entry point after relocating its required behavior.
 - Do not broaden a fix to additional branches merely for symmetry or
   consistency. An untouched branch is a compatibility constraint when no
   evidence says its behavior should change.
@@ -58,12 +69,16 @@ Schema:
 
 
 def _cached_repair_reads_prompt(state: dict[str, Any], limit: int = 7000) -> str:
+    chunks = list(iter_cached_chunks(state))[-6:]
+    if not chunks:
+        return ""
+    per_chunk = max(1200, limit // len(chunks))
     parts: list[str] = []
-    for key, data in list(iter_cached_chunks(state))[-6:]:
+    for key, data in chunks:
         parts.append(
             f"Cached read {key}: lines {data.get('start_line')}-{data.get('end_line')} "
             f"of {data.get('total_lines')} sha={data.get('sha16')}\n"
-            f"{truncate(str(data.get('content') or ''), max(800, limit // 6))}"
+            f"{truncate(str(data.get('content') or ''), per_chunk)}"
         )
     return truncate("\n\n".join(parts), limit)
 
@@ -165,12 +180,35 @@ def _failed_requirement_prompt(state: dict[str, Any], limit: int = 5000) -> str:
 def _repair_target_contents_prompt(
     state: dict[str, Any],
     controller: dict[str, Any],
-    limit: int = 12000,
+    limit: int = 22000,
 ) -> str:
     workspace = Path(str(state.get("workspace") or ".")).resolve()
     parts: list[str] = []
     used = 0
-    for rel in controller.get("target_files") or []:
+    targets = [
+        str(rel or "").replace("\\", "/")
+        for rel in controller.get("target_files") or []
+        if str(rel or "").strip()
+    ]
+    last_result = state.get("last_tool_result") or {}
+    last_data = last_result.get("data") if isinstance(last_result.get("data"), dict) else {}
+    failed_path = str(last_data.get("path") or "").replace("\\", "/")
+    if last_result.get("ok") is False and failed_path in targets:
+        targets.remove(failed_path)
+        targets.insert(0, failed_path)
+
+    def head_tail(content: str, max_chars: int) -> str:
+        if len(content) <= max_chars:
+            return content
+        head_size = max_chars // 2
+        tail_size = max_chars - head_size
+        return (
+            content[:head_size]
+            + "\n\n... <middle omitted; current file continues> ...\n\n"
+            + content[-tail_size:]
+        )
+
+    for rel in targets:
         rel = str(rel or "").replace("\\", "/")
         if not rel:
             continue
@@ -188,7 +226,10 @@ def _repair_target_contents_prompt(
         remaining = limit - used
         if remaining <= 300:
             break
-        block = f"===== {rel} =====\n{truncate(content, min(7000, remaining - 100))}"
+        block = (
+            f"===== {rel} =====\n"
+            f"{head_tail(content, min(10000, remaining - 100))}"
+        )
         parts.append(block)
         used += len(block)
     return "\n\n".join(parts)
@@ -224,6 +265,26 @@ def repair_node(state: dict[str, Any]) -> dict[str, Any]:
     controller_reused = controller is not None
     if controller is None:
         controller = build_repair_controller(state)
+    generated_paths = {
+        str(item.get("path") or "").replace("\\", "/")
+        for item in state.get("generated_files") or []
+        if isinstance(item, dict) and item.get("path")
+    }
+    existing_project_targets = [
+        str(path).replace("\\", "/")
+        for path in controller.get("target_files") or []
+        if (
+            path
+            and (Path(str(state.get("workspace") or ".")) / str(path)).is_file()
+            and str(path).replace("\\", "/") not in generated_paths
+        )
+    ]
+    if existing_project_targets:
+        controller["allowed_tools"] = [
+            tool
+            for tool in controller.get("allowed_tools") or []
+            if tool != "write_file"
+        ]
     generated_read_files = [
         str(item.get("path") or "").replace("\\", "/")
         for item in state.get("generated_files") or []
@@ -287,7 +348,9 @@ def repair_node(state: dict[str, Any]) -> dict[str, Any]:
         f"Repair controller:\n{_compact_json({key: controller.get(key) for key in ('route', 'failure_owner', 'strategy', 'target_files', 'primary_issue', 'reason')}, 4500)}\n"
         f"Force repair action:\n{state.get('force_repair_action')}\n\n"
         f"Exact target file contents (patch directly when present):\n{target_contents}\n\n"
-        f"Cached reads:\n{_cached_repair_reads_prompt(state)}\n\n"
+        f"Cached reads:\n{_cached_repair_reads_prompt(state, limit=12000)}\n\n"
+        f"Last tool result (use current edit context after an exact-match failure):\n"
+        f"{_compact_json(state.get('last_tool_result'), 6000)}\n\n"
         f"Recent tool actions (including exact edits):\n{_recent_actions_prompt(state)}\n\n"
         f"Recent reflexions:\n{_compact_json(recent_reflexions[-3:], 2500)}\n\n"
         "Choose one grounded next action. If one target file needs several known changes, "

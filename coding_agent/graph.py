@@ -38,7 +38,9 @@ from .nodes.deliverable_review import (
 from .nodes.strategy_reflection import strategy_reflection_node
 from .nodes.report import report_node
 from .nodes.final_gate import compute_final_gate
+from .core.implementation_batch import implementation_batch_can_continue
 from .scope.mode_policy import mode_requires_verification
+from .verification.behavior_review import MAX_VERIFICATION_PLAN_ATTEMPTS
 
 
 def is_analysis_task(state: AgentState) -> bool:
@@ -86,6 +88,12 @@ def route_after_context(state: AgentState) -> str:
             state["stopped_reason"] = "max_rounds"
             return "report"
         return "repair"
+    if (
+        state.get("needs_verification")
+        and not round_budget_exhausted
+        and implementation_batch_can_continue(state)
+    ):
+        return "act"
     if round_budget_exhausted and not state.get("needs_verification"):
         state["stopped_reason"] = "max_rounds"
         return "report"
@@ -142,8 +150,16 @@ def route_after_tool(state: AgentState) -> str:
         return "strategy_reflection"
     if tool in {"write_file", "edit_file", "apply_patch"}:
         if result.get("ok") and data.get("changed"):
-            # A successful file-changing action must be verified even when the
-            # LLM round budget has just been reached.
+            # Complete a bounded initial multi-file implementation before
+            # verification. Repairs after the first verification are still
+            # checked after each edit.
+            if (
+                int(state.get("round_idx", 0)) < max_rounds
+                and implementation_batch_can_continue(state)
+            ):
+                return "context_compress"
+            # A successful file-changing action must still be verified when
+            # the LLM round budget has just been reached.
             return "repo_scan"
         # Failed or no-op edits did not create new code to verify. Do not let a
         # stale needs_verification flag from a previous failed verification send
@@ -187,6 +203,11 @@ def route_after_tool(state: AgentState) -> str:
             state["stopped_reason"] = state.get("stopped_reason") or "finish_requested"
             return "report"
         return "report"
+    if (
+        tool in {"read_file", "search_text", "filter_files", "list_files"}
+        and implementation_batch_can_continue(state)
+    ):
+        return "context_compress"
     # Verification is a runtime obligation, not another LLM repair round. If
     # the last allowed action changed files at the round limit, still run the
     # deterministic verification path before reporting.
@@ -227,25 +248,6 @@ def route_after_verify(state: AgentState) -> str:
             return "deliverable_review"
         state["stopped_reason"] = state.get("stopped_reason") or "verified_ok"
         return "report"
-    if state.get("verification_stalled"):
-        repeat_count = int(state.get("verification_failure_repeat_count", 0) or 0)
-        state["needs_verification"] = False
-        state["stopped_reason"] = "repeated_verification_failure"
-        state["failure_owner"] = "verification_controller"
-        state["strategy_decision"] = {
-            "strategy": "stop_repeated_verification_failure",
-            "reason": "verification evidence did not change across bounded retries",
-        }
-        state["failure"] = {
-            "failure_type": "repeated_verification_failure",
-            "priority": 5,
-            "message": f"the same verification evidence repeated {repeat_count} times; implementation repair was stopped",
-            "target_file": None,
-            "signature": str(state.get("verification_failure_fingerprint") or "repeated_verification_failure"),
-            "raw_excerpt": str((state.get("verification") or {}).get("results") or [])[:4000],
-            "source": "route_after_verify",
-        }
-        return "report"
     gate_probe = dict(state)
     gate_probe["needs_verification"] = False
     gate = compute_final_gate(gate_probe)
@@ -276,9 +278,37 @@ def route_after_verify(state: AgentState) -> str:
         if executed_results
         else bool(rejected_oracle_steps)
     )
-    if required_failed == 0 and required_unverified > 0 and all_executed_commands_passed:
+    # Repeated *failing* execution should stop a repair loop. Repeatedly
+    # missing evidence is different: after bounded replanning it must still
+    # reach the deliverable audit, which may identify an incomplete multi-file
+    # implementation even when no safe scenario could be constructed.
+    evidence_only_gap = (
+        required_failed == 0
+        and required_unverified > 0
+        and all_executed_commands_passed
+    )
+    if state.get("verification_stalled") and not evidence_only_gap:
+        repeat_count = int(state.get("verification_failure_repeat_count", 0) or 0)
+        state["needs_verification"] = False
+        state["stopped_reason"] = "repeated_verification_failure"
+        state["failure_owner"] = "verification_controller"
+        state["strategy_decision"] = {
+            "strategy": "stop_repeated_verification_failure",
+            "reason": "verification evidence did not change across bounded retries",
+        }
+        state["failure"] = {
+            "failure_type": "repeated_verification_failure",
+            "priority": 5,
+            "message": f"the same verification evidence repeated {repeat_count} times; implementation repair was stopped",
+            "target_file": None,
+            "signature": str(state.get("verification_failure_fingerprint") or "repeated_verification_failure"),
+            "raw_excerpt": str((state.get("verification") or {}).get("results") or [])[:4000],
+            "source": "route_after_verify",
+        }
+        return "report"
+    if evidence_only_gap:
         attempts = int(state.get("verification_plan_attempts", 0) or 0)
-        if attempts < 2:
+        if attempts < MAX_VERIFICATION_PLAN_ATTEMPTS:
             state["needs_verification"] = True
             state["verification_reason"] = "required behavior lacks executed evidence; replan verification without changing implementation"
             return "verify"

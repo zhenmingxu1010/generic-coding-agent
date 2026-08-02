@@ -13,6 +13,20 @@ MAX_SOURCE_CHARS = 100_000
 PYTHON_EXECUTABLES = {"python", "python.exe", "python3", "python3.exe"}
 
 
+def _is_pytest_command(command: list[str]) -> bool:
+    if not command:
+        return False
+    executable = Path(str(command[0])).name.lower()
+    if executable in {"pytest", "pytest.exe"}:
+        return True
+    return (
+        executable in PYTHON_EXECUTABLES
+        and len(command) > 2
+        and str(command[1]) == "-m"
+        and str(command[2]).lower() == "pytest"
+    )
+
+
 def _normalize_text(value: Any) -> str:
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"(?m)^\s*\d+\s*:\s?", "", text)
@@ -155,6 +169,12 @@ def resolve_grounding_source(
 def _application_option_tokens(command: list[str]) -> list[str]:
     if not command:
         return []
+    # pytest's flags configure the evidence runner rather than the public
+    # interface of the application under test. Unknown flags still fail when
+    # pytest executes, so treating them as runner infrastructure does not make
+    # the evidence less strict.
+    if _is_pytest_command(command):
+        return []
     executable = Path(str(command[0])).name.lower()
     start = 1
     if executable in PYTHON_EXECUTABLES:
@@ -176,9 +196,9 @@ def _application_option_tokens(command: list[str]) -> list[str]:
 def _application_positional_inputs(command: list[str]) -> list[str]:
     if not command:
         return []
-    executable = Path(str(command[0])).name.lower()
-    if executable in {"pytest", "pytest.exe"}:
+    if _is_pytest_command(command):
         return []
+    executable = Path(str(command[0])).name.lower()
     start = 1
     if executable in PYTHON_EXECUTABLES:
         if len(command) > 2 and command[1] == "-m":
@@ -194,6 +214,24 @@ def _application_positional_inputs(command: list[str]) -> list[str]:
         and not str(token).startswith("-")
         and "{verification_dir}" not in str(token)
     ]
+
+
+def _pytest_node_selectors(command: list[str]) -> list[str]:
+    if not _is_pytest_command(command):
+        return []
+    return [
+        str(token).replace("\\", "/")
+        for token in command
+        if "::" in str(token) and not str(token).startswith("-")
+    ]
+
+
+def _normalized_pytest_selector(value: str) -> str:
+    path, *nodes = str(value or "").replace("\\", "/").split("::")
+    if path.endswith(".py"):
+        path = path[:-3]
+    dotted_path = path.strip("./").replace("/", ".")
+    return "::".join([dotted_path, *nodes])
 
 
 def validate_step_grounding(state: dict[str, Any], step: dict[str, Any]) -> dict[str, Any]:
@@ -302,6 +340,26 @@ def validate_step_grounding(state: dict[str, Any], step: dict[str, Any]) -> dict
     if unsupported_test_inputs:
         reasons.append("test source files may not be used as application inputs without exact evidence")
 
+    prior_testcases = {
+        str(case.get("test") or "")
+        for run in ((state.get("verification") or {}).get("test_results") or {}).get("runs") or []
+        if isinstance(run, dict)
+        for case in run.get("testcases") or []
+        if isinstance(case, dict) and case.get("test")
+    }
+    unsupported_test_selectors = [
+        selector
+        for selector in _pytest_node_selectors(
+            [str(part) for part in step.get("command") or []]
+        )
+        if _normalized_pytest_selector(selector) not in prior_testcases
+        and _normalize_text(selector) not in cited_text
+    ]
+    if unsupported_test_selectors:
+        reasons.append(
+            "pytest node selectors must match a prior collected test or exact cited evidence"
+        )
+
     return {
         "status": "accepted" if not reasons else "rejected",
         "citations": citations,
@@ -309,6 +367,7 @@ def validate_step_grounding(state: dict[str, Any], step: dict[str, Any]) -> dict
         "expected": expected,
         "unsupported_options": unsupported_options,
         "unsupported_test_inputs": unsupported_test_inputs,
+        "unsupported_test_selectors": unsupported_test_selectors,
         "missing_contract_citations": missing_contract_citations,
         "implementation_only_citations": implementation_only_citations,
         "reasons": reasons,

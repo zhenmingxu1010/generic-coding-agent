@@ -15,8 +15,13 @@ RESULT    11/11 detailed validators passed
 $ python scripts/release_check.py
 PASS source_scan       0 credential/private-path hits
 PASS compile
-PASS pytest            475 passed
+PASS pytest            536 passed
 PASS build             wheel + source distribution
 PASS distributions
 PASS wheel_smoke       isolated installed-wheel import + 3 CLIs
 RESULT                  local v0.1.0-alpha gate passed
+
+$ python -m evaluations.real_world.collect_results ...
+PASS external acceptance 4/4 · protected mutations 0
+PASS success-claim precision 100% · false-positive claims 0
+NOTE success-claim recall 75% · one conservative false negative

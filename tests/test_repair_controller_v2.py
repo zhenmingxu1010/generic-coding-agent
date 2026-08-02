@@ -120,6 +120,40 @@ def test_llm_owner_decision_finalizes_implementation_target(tmp_path: Path):
     assert allowed is None
 
 
+def test_behavior_failure_keeps_authorized_scope_and_drops_invented_target(tmp_path: Path):
+    state = _base_state(tmp_path)
+    state["failure"] = {"failure_type": "contract_error", "signature": "behavior-sig"}
+    state["scope_contract"] = {
+        "allowed_modify_paths": [
+            "package/hooks.py",
+            "package/generate.py",
+            "package/exceptions.py",
+        ]
+    }
+    state["failure_issues"] = [{
+        "owner": "implementation",
+        "type": "verification_command_failed",
+        "message": "the requested failure behavior was not observed",
+        "target_file": None,
+    }]
+
+    controller = finalize_repair_controller(
+        state,
+        {
+            "failure_owner": "implementation",
+            "strategy": "fix_implementation",
+            "target_files": ["package/hooks.py", "package/main.py"],
+            "reason": "repair the failed observable behavior",
+        },
+    )
+
+    assert controller["target_files"] == [
+        "package/hooks.py",
+        "package/generate.py",
+        "package/exceptions.py",
+    ]
+
+
 def test_generated_test_decision_cannot_target_project_code(tmp_path: Path):
     state = _base_state(tmp_path)
     state["failure"] = {"failure_type": "test_failure", "signature": "sig"}
@@ -243,6 +277,27 @@ def test_repair_prompt_includes_exact_controller_target(tmp_path: Path):
     assert "return 1" in text
 
 
+def test_repair_prompt_keeps_head_and_tail_of_long_target(tmp_path: Path):
+    state = _base_state(tmp_path)
+    target = tmp_path / "scripts" / "long_tool.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        "HEAD_ANCHOR = 1\n"
+        + ("middle_value = 0\n" * 1200)
+        + "TAIL_ANCHOR = 2\n",
+        encoding="utf-8",
+    )
+
+    text = _repair_target_contents_prompt(
+        state,
+        {"target_files": ["scripts/long_tool.py"]},
+    )
+
+    assert "HEAD_ANCHOR = 1" in text
+    assert "TAIL_ANCHOR = 2" in text
+    assert "middle omitted" in text
+
+
 def test_repair_node_stops_before_llm_when_call_budget_is_exhausted(monkeypatch, tmp_path: Path):
     state = _base_state(tmp_path)
     state.update(
@@ -329,6 +384,44 @@ def test_concrete_implementation_issue_overrides_unverified_evidence_gap(tmp_pat
     assert "edit_file" not in controller["blocked_tools"]
 
 
+def test_deliverable_issue_keeps_authorized_multifile_repair_scope(
+    tmp_path: Path,
+):
+    state = _base_state(tmp_path)
+    state["failure"] = {
+        "failure_type": "deliverable_consistency_error",
+        "signature": "partial-multifile-fix",
+    }
+    state["scope_contract"] = {
+        "allowed_modify_paths": [
+            "package/hooks.py",
+            "package/generate.py",
+            "package/exceptions.py",
+        ],
+    }
+    state["failure_issues"] = [{
+        "owner": "implementation",
+        "type": "deliverable_consistency_error",
+        "file": "package/exceptions.py",
+        "target_file": "package/exceptions.py",
+        "message": "the exception exists but the required behavior is not implemented",
+        "source": "deliverable_review",
+    }]
+
+    controller = build_repair_controller(state)
+    controller["allowed_read_files"] = list(controller["target_files"])
+    force = force_action_from_controller(controller)
+
+    assert controller["target_files"] == [
+        "package/hooks.py",
+        "package/generate.py",
+        "package/exceptions.py",
+    ]
+    assert force is not None
+    assert force["allowed_target_files"] == controller["target_files"]
+    assert "read_file" in force["allowed_tools"]
+
+
 def test_failure_issues_are_part_of_persistent_agent_state():
     assert "failure_issues" in AgentState.__annotations__
 
@@ -354,6 +447,88 @@ def test_zero_collected_routes_to_registered_tests(tmp_path: Path):
     assert controller["failure_owner"] == "generated_test"
     assert controller["target_files"] == [".coding_agent_test/t/tests/test_tool.py"]
     assert "read_file" in controller["blocked_tools"]
+
+
+def test_dynamic_zero_collection_does_not_override_structured_project_run(tmp_path: Path):
+    state = _base_state(tmp_path)
+    state["failure"] = {"failure_type": "verification_failed", "signature": "dynamic-zero"}
+    state["verification"] = {
+        "results": [{
+            "name": "guessed_selector",
+            "returncode": 4,
+            "stdout": "collected 0 items\nno tests ran",
+            "stderr": "ERROR: not found",
+        }],
+        "test_results": {
+            "runs": [{
+                "name": "pytest",
+                "total": 12,
+                "passed": 12,
+                "failed": 0,
+                "errors": 0,
+                "stdout": "12 passed",
+            }]
+        },
+    }
+    state["failure_issues"] = [{
+        "owner": "implementation",
+        "type": "verification_command_failed",
+        "message": "the requested scenario did not execute",
+    }]
+
+    controller = build_repair_controller(state)
+
+    assert controller["route"] != "fix_test_registry"
+    assert not any(
+        issue.get("type") == "pytest_zero_collected"
+        for issue in controller["issues"]
+    )
+
+
+def test_repair_issues_exclude_accepted_baseline_and_rejected_oracle(tmp_path: Path):
+    state = _base_state(tmp_path)
+    state["verification"] = {
+        "results": [
+            {
+                "name": "pytest",
+                "returncode": 0,
+                "stdout": "AssertionError: accepted baseline mismatch",
+                "stderr": "",
+            },
+            {
+                "name": "bad_fixture",
+                "returncode": 1,
+                "stdout": "FileNotFoundError: invalid generated fixture",
+                "stderr": "",
+            },
+            {
+                "name": "requested_behavior",
+                "returncode": 1,
+                "stdout": "ERROR: required exception was not raised",
+                "stderr": "",
+            },
+        ],
+        "test_results": {
+            "accepted_preexisting_failures": True,
+            "runs": [{
+                "failures": [{
+                    "test": "tests.test_old::test_old",
+                    "type": "AssertionError",
+                    "message": "accepted baseline mismatch",
+                }]
+            }],
+        },
+    }
+    state["verification_oracle_review"] = {
+        "rejected_step_names": ["bad_fixture"],
+    }
+
+    issues = decompose_failure_issues(state)
+    text = json.dumps(issues)
+
+    assert "requested_behavior" in text
+    assert "accepted baseline mismatch" not in text
+    assert "invalid generated fixture" not in text
 
 
 def test_missing_symbol_in_generated_test_routes_to_interface_repair(tmp_path: Path):

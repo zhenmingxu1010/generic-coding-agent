@@ -29,7 +29,7 @@ def test_validate_distributions_reports_missing_required_sdist_member(tmp_path: 
 
 def test_required_distribution_manifest_covers_release_evidence():
     assert "docs/VALIDATION.md" in MODULE.REQUIRED_SDIST_MEMBERS
-    assert "docs/assets/validated-demo.gif" in MODULE.REQUIRED_SDIST_MEMBERS
+    assert "docs/assets/validated-demo.svg" in MODULE.REQUIRED_SDIST_MEMBERS
     assert "docs/assets/validated-demo.txt" in MODULE.REQUIRED_SDIST_MEMBERS
     assert "regression_matrix/matrix.json" in MODULE.REQUIRED_SDIST_MEMBERS
     assert "scripts/collect_regression_audits.py" in MODULE.REQUIRED_SDIST_MEMBERS

@@ -16,6 +16,27 @@ Each case pins a public buggy commit and its historical fixed commit. The runner
 This prevents a passing environment, an LLM success claim, or a weakened test from
 being counted as a repair.
 
+## Case schema
+
+`real_world_case_v2` adds evaluator-only metadata without exposing historical
+source fixes to the Agent:
+
+- `categories` supports per-class reporting such as `multi-file`,
+  `api-migration`, or `ambiguous-issue`;
+- `expected_change_shape` is `localized`, `multi_file`, or `either`; and
+- `hidden_test_paths` may contain multiple historical test paths; and
+- `test_environment` may declare non-sensitive test controls such as disabling
+  historical network tests.
+
+The runner remains compatible with `real_world_case_v1`. Change-shape metadata
+is descriptive and does not force the Agent to reproduce the historical source
+patch; hidden behavior remains the acceptance authority.
+
+The runner prepends the target interpreter's virtual-environment directory to
+`PATH`, supplies an isolated `HOME`, disables the user site, and rejects case
+attempts to override `HOME`, `PATH`, Python import paths, or `AGENT_*`
+configuration.
+
 Cases may also declare evaluator-owned `hidden_files`. They are installed only
 in the baseline, historical fixed control, and post-agent acceptance workspace.
 They are never present while the agent is working. This supports compatibility
@@ -37,3 +58,29 @@ python -m evaluations.real_world.runner \
 The source clone and target test environment are deliberately supplied by the
 caller. Network access and dependency installation are outside the benchmark
 runner, making environment failures explicit and keeping runs reproducible.
+
+## Sanitized metrics
+
+Collect one or more raw results:
+
+```bash
+python -m evaluations.real_world.collect_results \
+  .agent_runs/real-world/*.json \
+  --case-dir evaluations/real_world/cases \
+  --run-date YYYY-MM-DD \
+  --scope-note "Describe exactly what this sample does and does not prove." \
+  --output evaluations/real_world/summary.json
+```
+
+`real_world_summary_v2` reports:
+
+- evaluator-owned external acceptance;
+- Agent success claims and final-gate true/false positives/negatives;
+- success-claim precision and recall;
+- protected test mutations;
+- changed project files, top-level areas, and multi-file changes;
+- duration, model calls, and reported token usage; and
+- category-level resolution.
+
+Environment-unreachable cases remain visible but are excluded from resolution
+and final-gate rate denominators.

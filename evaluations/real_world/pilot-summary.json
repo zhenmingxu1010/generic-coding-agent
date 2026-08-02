@@ -1,50 +1,258 @@
 {
-  "version": "real_world_summary_v1",
-  "run_date": "2026-07-23",
-  "total": 3,
-  "resolved": 3,
+  "version": "real_world_summary_v2",
+  "total": 4,
+  "eligible": 4,
+  "resolved": 4,
   "environment_unreachable": 0,
   "agent_reported_ok": 3,
-  "hidden_tests_passed": 3,
+  "hidden_tests_passed": 4,
+  "external_acceptance_passed": 4,
   "protected_mutation_cases": 0,
-  "average_agent_duration_seconds": 36.454,
+  "final_gate": {
+    "true_positive": 3,
+    "false_positive": 0,
+    "false_negative": 1,
+    "true_negative": 0,
+    "success_claim_precision": 1.0,
+    "success_claim_recall": 0.75,
+    "false_positive_claim_rate": 0.0
+  },
+  "resolution_rate": 1.0,
+  "average_agent_duration_seconds": 55.699,
+  "median_agent_duration_seconds": 39.892,
+  "total_token_usage": {
+    "calls": 47,
+    "prompt_tokens": 408880,
+    "completion_tokens": 22171,
+    "reasoning_tokens": 0,
+    "cached_tokens": 54784,
+    "prompt_cache_hit_tokens": 54784,
+    "prompt_cache_miss_tokens": 354096,
+    "total_tokens": 431051
+  },
+  "average_total_tokens": 107762.75,
+  "average_changed_project_files": 1.5,
+  "multi_file_change_cases": 1,
+  "categories": {
+    "api-semantics": {
+      "total": 1,
+      "eligible": 1,
+      "externally_accepted": 1,
+      "resolution_rate": 1.0,
+      "false_positive_claims": 0
+    },
+    "cleanup": {
+      "total": 1,
+      "eligible": 1,
+      "externally_accepted": 1,
+      "resolution_rate": 1.0,
+      "false_positive_claims": 0
+    },
+    "compatibility": {
+      "total": 2,
+      "eligible": 2,
+      "externally_accepted": 2,
+      "resolution_rate": 1.0,
+      "false_positive_claims": 0
+    },
+    "edge-case": {
+      "total": 1,
+      "eligible": 1,
+      "externally_accepted": 1,
+      "resolution_rate": 1.0,
+      "false_positive_claims": 0
+    },
+    "error-propagation": {
+      "total": 1,
+      "eligible": 1,
+      "externally_accepted": 1,
+      "resolution_rate": 1.0,
+      "false_positive_claims": 0
+    },
+    "localized": {
+      "total": 3,
+      "eligible": 3,
+      "externally_accepted": 3,
+      "resolution_rate": 1.0,
+      "false_positive_claims": 0
+    },
+    "multi-file": {
+      "total": 1,
+      "eligible": 1,
+      "externally_accepted": 1,
+      "resolution_rate": 1.0,
+      "false_positive_claims": 0
+    },
+    "repair": {
+      "total": 4,
+      "eligible": 4,
+      "externally_accepted": 4,
+      "resolution_rate": 1.0,
+      "false_positive_claims": 0
+    },
+    "runtime-error": {
+      "total": 1,
+      "eligible": 1,
+      "externally_accepted": 1,
+      "resolution_rate": 1.0,
+      "false_positive_claims": 0
+    }
+  },
   "cases": [
+    {
+      "case_id": "cookiecutter-failed-hook-cleanup",
+      "project": "Cookiecutter",
+      "categories": [
+        "cleanup",
+        "error-propagation",
+        "multi-file",
+        "repair"
+      ],
+      "expected_change_shape": "multi_file",
+      "status": "resolved",
+      "environment_reachable": true,
+      "agent_reported_ok": false,
+      "agent_stopped_reason": "unresolved_verification_failure",
+      "external_acceptance_passed": true,
+      "final_gate_alignment": "false_negative",
+      "hidden_tests_passed": true,
+      "protected_mutations": [],
+      "changed_project_paths": [
+        "cookiecutter/exceptions.py",
+        "cookiecutter/generate.py",
+        "cookiecutter/hooks.py"
+      ],
+      "changed_project_file_count": 3,
+      "changed_top_level_areas": [
+        "cookiecutter"
+      ],
+      "multi_file_change": true,
+      "agent_duration_seconds": 113.433,
+      "token_usage": {
+        "calls": 20,
+        "prompt_tokens": 208936,
+        "completion_tokens": 10493,
+        "reasoning_tokens": 0,
+        "cached_tokens": 34432,
+        "prompt_cache_hit_tokens": 34432,
+        "prompt_cache_miss_tokens": 174504,
+        "total_tokens": 219429
+      }
+    },
     {
       "case_id": "pysnooper-file-output",
       "project": "PySnooper",
+      "categories": [
+        "localized",
+        "repair",
+        "runtime-error"
+      ],
+      "expected_change_shape": "localized",
       "status": "resolved",
       "environment_reachable": true,
       "agent_reported_ok": true,
       "agent_stopped_reason": "verified_ok",
+      "external_acceptance_passed": true,
+      "final_gate_alignment": "true_positive",
       "hidden_tests_passed": true,
       "protected_mutations": [],
-      "changed_project_paths": ["pysnooper/pysnooper.py"],
-      "agent_duration_seconds": 42.716
+      "changed_project_paths": [
+        "pysnooper/pysnooper.py"
+      ],
+      "changed_project_file_count": 1,
+      "changed_top_level_areas": [
+        "pysnooper"
+      ],
+      "multi_file_change": false,
+      "agent_duration_seconds": 42.716,
+      "token_usage": {
+        "calls": 9,
+        "prompt_tokens": 59390,
+        "completion_tokens": 4684,
+        "reasoning_tokens": 0,
+        "cached_tokens": 5760,
+        "prompt_cache_hit_tokens": 5760,
+        "prompt_cache_miss_tokens": 53630,
+        "total_tokens": 64074
+      }
     },
     {
       "case_id": "tqdm-tenumerate-start",
       "project": "tqdm",
+      "categories": [
+        "api-semantics",
+        "compatibility",
+        "localized",
+        "repair"
+      ],
+      "expected_change_shape": "localized",
       "status": "resolved",
       "environment_reachable": true,
       "agent_reported_ok": true,
       "agent_stopped_reason": "verified_ok",
+      "external_acceptance_passed": true,
+      "final_gate_alignment": "true_positive",
       "hidden_tests_passed": true,
       "protected_mutations": [],
-      "changed_project_paths": ["tqdm/contrib/__init__.py"],
-      "agent_duration_seconds": 37.069
+      "changed_project_paths": [
+        "tqdm/contrib/__init__.py"
+      ],
+      "changed_project_file_count": 1,
+      "changed_top_level_areas": [
+        "tqdm"
+      ],
+      "multi_file_change": false,
+      "agent_duration_seconds": 37.069,
+      "token_usage": {
+        "calls": 10,
+        "prompt_tokens": 73710,
+        "completion_tokens": 4001,
+        "reasoning_tokens": 0,
+        "cached_tokens": 7680,
+        "prompt_cache_hit_tokens": 7680,
+        "prompt_cache_miss_tokens": 66030,
+        "total_tokens": 77711
+      }
     },
     {
       "case_id": "tqdm-unknown-total-scale",
       "project": "tqdm",
+      "categories": [
+        "compatibility",
+        "edge-case",
+        "localized",
+        "repair"
+      ],
+      "expected_change_shape": "localized",
       "status": "resolved",
       "environment_reachable": true,
       "agent_reported_ok": true,
       "agent_stopped_reason": "verified_ok",
+      "external_acceptance_passed": true,
+      "final_gate_alignment": "true_positive",
       "hidden_tests_passed": true,
       "protected_mutations": [],
-      "changed_project_paths": ["tqdm/_tqdm.py"],
-      "agent_duration_seconds": 29.576
+      "changed_project_paths": [
+        "tqdm/_tqdm.py"
+      ],
+      "changed_project_file_count": 1,
+      "changed_top_level_areas": [
+        "tqdm"
+      ],
+      "multi_file_change": false,
+      "agent_duration_seconds": 29.576,
+      "token_usage": {
+        "calls": 8,
+        "prompt_tokens": 66844,
+        "completion_tokens": 2993,
+        "reasoning_tokens": 0,
+        "cached_tokens": 6912,
+        "prompt_cache_hit_tokens": 6912,
+        "prompt_cache_miss_tokens": 59932,
+        "total_tokens": 69837
+      }
     }
   ],
-  "scope_note": "A three-case localized repair pilot is evidence of basic real-repository repair ability, not a claim of broad SWE-bench performance."
+  "run_date": "2026-07-23",
+  "scope_note": "A four-case real-repository pilot covers three localized repairs and one multi-file error-propagation/cleanup repair. External acceptance passed all four cases; one conservative Agent final-gate false negative remains, so this is not a claim of broad SWE-bench performance or perfect autonomous verification."
 }

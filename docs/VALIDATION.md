@@ -12,7 +12,7 @@ model will behave identically.
 - Model protocol: OpenAI-compatible chat completions
 - Model used for live checks: `deepseek-v4-flash`
 - API connectivity check: passed
-- Offline suite: 495 passed
+- Offline suite: 536 passed
 - Distribution build: wheel and source distribution passed
 - Built-wheel smoke check: package imports and CLI help passed
 - Local release gate: source scan, compile, pytest, build, distribution
@@ -24,12 +24,21 @@ neutral.
 
 ## Real-repository repair pilot
 
-The current pilot resolved 3/3 pinned historical defects with hidden post-run
-acceptance, matching agent final-gate success, and no protected test source
-changes. One case includes an additional hidden compatibility check that caught
-and eliminated an initially over-broad repair. See
+The current pilot resolved 4/4 pinned historical defects with hidden post-run
+acceptance and no protected test source changes. Three localized cases match
+Agent final-gate success. The added multi-file Cookiecutter case is externally
+accepted but remains a conservative final-gate false negative because the
+Agent did not construct sufficient direct execution evidence. One localized
+case includes an additional hidden compatibility check that caught and
+eliminated an initially over-broad repair. See
 [REAL_WORLD_EVALUATION.md](REAL_WORLD_EVALUATION.md) for the protocol,
 per-case results, generic fixes, and explicit limits of this small sample.
+
+The v2 sanitized summary separates external acceptance from the Agent's success
+claim. This pilot contains three true-positive claims, zero false-positive
+claims, one false-negative claim, 47 model calls, and 431,051 reported tokens.
+One accepted repair changed three implementation files, providing a first
+multi-file data point rather than broad multi-file benchmark evidence.
 
 ## Live short-prompt checks
 
@@ -105,10 +114,10 @@ then record release-asset hashes outside the source archive with
 `shasum -a 256 dist/*`. A source distribution cannot contain its own stable
 hash because adding that hash changes the archive.
 
-## Remaining public-release evidence
+## Public-release evidence
 
-The selected audits were produced during the same hardening session, with T02
-and T06 rerun after the final corresponding fixes. Before a public tag, rerun
-all eleven cases on the exact release commit, publish the sanitized summary,
-and require public CI to pass. This is an account/release operation, not
-missing local runtime code.
+Commit `9dbcf9545f6f3d8a227852f211f1c213803cf116` was published as
+[`v0.1.0-alpha`](https://github.com/zhenmingxu1010/generic-coding-agent/releases/tag/v0.1.0-alpha).
+The `main` push and release-tag push both passed the public Python 3.10–3.13 CI
+matrix. The release contains the checked wheel and source distribution with
+GitHub-recorded SHA-256 digests.

@@ -1,8 +1,8 @@
 # Real-world repair evaluation
 
-The first reproducible pilot uses three historical Python defects sourced from
-public Git repositories and BugsInPy metadata. Every case pins a buggy commit
-and a historical fixed commit.
+The reproducible pilot uses four historical Python defects sourced from public
+Git repositories and BugsInPy metadata. Every case pins a buggy commit and a
+historical fixed commit.
 
 ## Evaluation protocol
 
@@ -24,16 +24,37 @@ same one-line implementation change as the historical repair.
 
 ## Current pilot result
 
-| Case | External result | Agent final gate | Hidden acceptance | Protected tests changed |
-|---|---:|---:|---:|---:|
-| PySnooper file output | resolved | `verified_ok` | pass | 0 |
-| tqdm `tenumerate(start)` | resolved | `verified_ok` | 2 tests pass | 0 |
-| tqdm unknown total + scale | resolved | `verified_ok` | pass | 0 |
+| Case | External result | Agent final gate | Changed project files | Tokens | Protected tests changed |
+|---|---:|---:|---:|---:|---:|
+| PySnooper file output | resolved | `verified_ok` | 1 | 64,074 | 0 |
+| tqdm `tenumerate(start)` | resolved | `verified_ok` | 1 | 77,711 | 0 |
+| tqdm unknown total + scale | resolved | `verified_ok` | 1 | 69,837 | 0 |
+| Cookiecutter failed-hook cleanup | resolved | conservative false negative | 3 | 219,429 | 0 |
 
 The sanitized machine-readable result is
 [`evaluations/real_world/pilot-summary.json`](../evaluations/real_world/pilot-summary.json).
 Raw reports remain local because they contain machine-specific workspace paths
 and model audit locations.
+
+The v2 summary treats the hidden post-run result as evaluator-owned truth and
+compares it with the Agent's final claim. On this small pilot:
+
+- external acceptance: 4/4;
+- true-positive success claims: 3;
+- false-positive claims: 0;
+- false-negative claims: 1;
+- success-claim precision: 100%;
+- success-claim recall: 75%;
+- protected mutation cases: 0;
+- model calls: 47;
+- reported tokens: 431,051; and
+- multi-file change cases: 1.
+
+Precision and recall are descriptive only at this sample size. The multi-file
+case demonstrates one accepted three-file repair, not broad repository-level
+performance. Its false-negative Agent claim also records the current limit:
+the implementation was correct, but autonomous verification did not produce
+sufficient trustworthy direct evidence.
 
 ## Generic improvements found by the pilot
 
@@ -48,15 +69,21 @@ and model audit locations.
   remaining failure has the same test, exception type, and normalized message.
 - Repair prompts require the smallest evidence-backed behavioral diff and treat
   unrelated branches as compatibility constraints.
+- Initial multi-file changes can complete a bounded implementation batch before
+  verification, while post-failure repairs remain edit-then-verify.
+- Verification probes reject definite local-call arity errors before execution,
+  and catch/cleanup scenarios are instructed to inject the lower-level failure
+  rather than rely on fragile full-stack fixtures.
 
 ## Limits
 
-Three localized defects are a useful smoke test, not a statistically meaningful
-benchmark and not evidence of complex multi-file issue resolution. The next
-evaluation expansion should include multi-file changes, ambiguous issue text,
-dependency/API migrations, and repositories with larger test suites. SWE-bench
-or an equivalent containerized benchmark should be reported separately when
-the required storage and reproducible runtime are available.
+Four defects are a useful smoke test, not a statistically meaningful benchmark.
+The one multi-file case is evidence of a specific error-propagation/cleanup
+repair, not complex issue-resolution breadth. The next expansion should include
+more multi-file changes, ambiguous issue text, dependency/API migrations, and
+repositories with larger test suites. SWE-bench or an equivalent containerized
+benchmark should be reported separately when the required storage and
+reproducible runtime are available.
 
 ## Reproduction
 

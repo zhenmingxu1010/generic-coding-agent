@@ -1,6 +1,6 @@
 # Demo Guide
 
-The README animation is a compact rendering of
+The README terminal summary is a compact rendering of
 [`docs/assets/validated-demo.txt`](assets/validated-demo.txt). It contains no
 private model configuration and is a visual summary, not a substitute for
 rerunning the commands below.
@@ -54,7 +54,7 @@ python scripts/collect_regression_audits.py \
   --strict
 ```
 
-The canonical 2026-07-22 run passed all eleven detailed scenario validators.
+The canonical 2026-07-23 record passed all eleven detailed scenario validators.
 See `docs/VALIDATION.md` for results and limitations. Before recording a public
 GIF, use a clean terminal profile and verify that no endpoint, key, username,
 or private workspace appears on screen.

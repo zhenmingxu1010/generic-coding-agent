@@ -14,8 +14,22 @@ from .common import get_trace
 
 
 def _all_output(verification: dict) -> str:
+    results = [
+        result
+        for result in verification.get("results", [])
+        if isinstance(result, dict)
+    ]
+    failing_results = [
+        result
+        for result in results
+        if int(result.get("returncode", 1) or 0) != 0 or result.get("timed_out")
+    ]
+    # Verification normalizes accepted baseline failures to returncode=0.
+    # Their raw pytest output is useful in reports but must not become the
+    # active repair diagnosis when a different task-specific command failed.
+    selected_results = failing_results or results
     chunks = []
-    for r in verification.get("results", []):
+    for r in selected_results:
         chunks.append(f"===== {r.get('name')} =====")
         chunks.append("COMMAND: " + " ".join(r.get("command", [])))
         chunks.append("RETURNCODE: " + str(r.get("returncode")))

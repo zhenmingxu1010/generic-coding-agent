@@ -26,3 +26,5 @@ def test_repair_prompts_require_minimal_compatibility_preserving_changes():
     for prompt in (ACT_SYSTEM, REPAIR_SYSTEM):
         assert "special-case branches" in prompt
         assert "compatibility constraint" in prompt
+        assert "reachable execution path" in prompt
+        assert "wrapper" in prompt

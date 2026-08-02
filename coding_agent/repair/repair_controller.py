@@ -6,6 +6,7 @@ from typing import Any
 from coding_agent.verification.test_registry import registered_test_paths
 from coding_agent.workspace.failed_writes import failed_write_for_path
 from coding_agent.workspace.run_paths import is_test_like_path
+from coding_agent.scope.scope_contract import path_allows_modify
 
 
 def _norm(path: str | None) -> str:
@@ -66,6 +67,38 @@ def _generated_test_targets(state: dict[str, Any]) -> list[str]:
                 if rel and rel not in out:
                     out.append(rel)
     return out
+
+
+def _scope_source_targets(state: dict[str, Any]) -> list[str]:
+    scope = (
+        state.get("scope_contract")
+        or (state.get("task_intent") or {}).get("scope_contract")
+        or {}
+    )
+    out: list[str] = []
+    for value in (
+        list(scope.get("allowed_modify_paths") or [])
+        + list(scope.get("expanded_modify_paths") or [])
+    ):
+        rel = _norm(str(value))
+        if (
+            rel
+            and not _is_test_path(rel)
+            and not any(marker in rel for marker in ("*", "?", "["))
+            and rel not in out
+        ):
+            out.append(rel)
+    return out
+
+
+def _has_unlocalized_behavior_failure(issues: list[dict[str, Any]]) -> bool:
+    behavior_types = {
+        "semantic_requirement_atom_failed",
+        "verification_command_failed",
+        "contract_failure",
+        "deliverable_consistency_error",
+    }
+    return any(str(issue.get("type") or "") in behavior_types for issue in issues)
 
 
 def finalized_controller_for_current_failure(state: dict[str, Any]) -> dict[str, Any] | None:
@@ -169,8 +202,17 @@ def _structured_zero_collected(state: dict[str, Any]) -> bool:
 
 
 def pytest_zero_collected(state: dict[str, Any]) -> bool:
-    if _structured_zero_collected(state):
-        return True
+    test_results = state.get("test_results") or (state.get("verification") or {}).get("test_results") or {}
+    structured_runs = [
+        run for run in test_results.get("runs") or []
+        if isinstance(run, dict)
+    ]
+    if structured_runs:
+        # The registry controller owns the authoritative project/generated
+        # pytest run only. A separate task-specific verification command may
+        # guess a nonexistent node selector and collect zero tests, but that is
+        # an oracle/evidence problem rather than a broken test registry.
+        return _structured_zero_collected(state)
     text = _verification_text(state).lower()
     return any(marker in text for marker in ["no tests ran", "collected 0 items", "ran 0 tests"])
 
@@ -367,11 +409,37 @@ def _fallback_route(state: dict[str, Any], issues: list[dict[str, Any]]) -> dict
             "primary_issue": generated[0],
         }
     if impl:
+        issue_targets = [
+            path
+            for path in (_issue_path(issue) for issue in impl)
+            if path
+        ]
+        behavior_failure = _has_unlocalized_behavior_failure(issues)
+        if behavior_failure:
+            # A final audit can only attach a finding to files it was given,
+            # and a failed observable scenario often has no traceback file.
+            # Preserve the bounded semantic source scope for these multi-file
+            # repairs instead of locking onto a noisy or arbitrary first path.
+            scope_targets = _scope_source_targets(state)
+            if scope_targets:
+                scope = (
+                    state.get("scope_contract")
+                    or (state.get("task_intent") or {}).get("scope_contract")
+                    or {}
+                )
+                issue_targets = [
+                    path
+                    for path in issue_targets
+                    if path_allows_modify(scope, path) and not _is_test_path(path)
+                ]
+            target_files = list(dict.fromkeys(scope_targets + issue_targets))[:8]
+        else:
+            target_files = list(dict.fromkeys(issue_targets))
         return {
             "route": "fix_implementation",
             "failure_owner": "implementation" if not generated else "implementation_and_generated_test",
             "strategy": "fix_implementation",
-            "target_files": [p for p in (_issue_path(issue) for issue in impl) if p] or _generated_code_targets(state)[:1],
+            "target_files": target_files or _generated_code_targets(state)[:1],
             "allowed_tools": ["edit_file", "write_file", "run_tests", "run_shell", "finish"],
             "blocked_tools": [],
             "reason": "implementation issues are present and must be repaired before claiming success",
@@ -507,8 +575,40 @@ def finalize_repair_controller(
             targets = [path for path in targets if path in generated_tests]
             if not targets:
                 targets = sorted(generated_tests)[:3]
-        elif strategy == "fix_implementation" and not targets:
-            targets = _generated_code_targets(state)[:1]
+        elif strategy == "fix_implementation":
+            scope = (
+                state.get("scope_contract")
+                or (state.get("task_intent") or {}).get("scope_contract")
+                or {}
+            )
+            scope_targets = _scope_source_targets(state)
+            # An LLM owner review may suggest a plausible but unauthorized
+            # file. Keep implementation repair inside the established scope.
+            if scope_targets:
+                targets = [
+                    path
+                    for path in targets
+                    if path_allows_modify(scope, path) and not _is_test_path(path)
+                ]
+            base_targets = [
+                _norm(str(path))
+                for path in controller.get("target_files") or []
+                if _norm(str(path)) and not _is_test_path(str(path))
+            ]
+            if scope_targets:
+                base_targets = [
+                    path for path in base_targets
+                    if path_allows_modify(scope, path)
+                ]
+            issues = [
+                issue
+                for issue in controller.get("issues") or []
+                if isinstance(issue, dict)
+            ]
+            if _has_unlocalized_behavior_failure(issues):
+                targets = list(dict.fromkeys(scope_targets + base_targets + targets))[:8]
+            elif not targets:
+                targets = base_targets or scope_targets or _generated_code_targets(state)[:1]
 
         if strategy in {"fix_implementation", "fix_generated_test"}:
             route = strategy
@@ -558,6 +658,11 @@ def force_action_from_controller(controller: dict[str, Any]) -> dict[str, Any] |
         for item in controller.get("allowed_read_files") or []
         if _norm(str(item))
     ]
+    if allowed_read_files and "read_file" not in allowed:
+        # The execution broker permits one bounded, uncached read of an active
+        # repair target. Expose the same permission to the decision validator
+        # so a valid read is not rejected before it reaches that broker.
+        allowed.append("read_file")
     target_owner = str(controller.get("failure_owner") or "")
     target_lock_needed = bool(
         target_files

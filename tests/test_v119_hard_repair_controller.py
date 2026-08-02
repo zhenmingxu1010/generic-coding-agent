@@ -201,6 +201,40 @@ def test_force_repair_allows_one_targeted_read_before_blocking_repeats(tmp_path:
     assert blocked.data["blocked_by_repair_action_budget"] is True
 
 
+def test_force_repair_blocks_full_rewrite_of_existing_project_source(tmp_path: Path):
+    target = tmp_path / "scripts" / "tool.py"
+    target.parent.mkdir()
+    target.write_text("def value():\n    return 1\n", encoding="utf-8")
+    state = {
+        "workspace": str(tmp_path),
+        "failure": {"signature": "sig"},
+        "force_repair_action": {
+            "required_path": "scripts/tool.py",
+            "allowed_target_files": ["scripts/tool.py"],
+            "allowed_tools": ["edit_file", "write_file", "run_tests", "finish"],
+        },
+    }
+
+    blocked = _force_repair_policy_result(
+        state,
+        "write_file",
+        {"path": "scripts/tool.py", "content": "def value():\n    return 2\n"},
+    )
+    allowed = _force_repair_policy_result(
+        state,
+        "edit_file",
+        {
+            "path": "scripts/tool.py",
+            "old_text": "return 1",
+            "new_text": "return 2",
+        },
+    )
+
+    assert blocked is not None
+    assert blocked.data["blocked_by_existing_source_rewrite_policy"] is True
+    assert allowed is None
+
+
 def test_force_repair_allows_bounded_read_of_generated_support_file(tmp_path: Path):
     target = tmp_path / "example.txt"
     target.write_text("one two\n", encoding="utf-8")

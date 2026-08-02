@@ -137,6 +137,30 @@ def _make_diff(path: str, before: str, after: str, max_chars: int = 20000) -> st
     return truncate(diff, max_chars)
 
 
+def _nearest_edit_context(content: str, missing_text: str, *, radius: int = 12) -> str:
+    """Return nearby current source when an exact edit anchor is stale."""
+    lines = content.splitlines()
+    needles = [line.strip() for line in missing_text.splitlines() if line.strip()]
+    if not lines or not needles:
+        return ""
+    best_index = 0
+    best_score = -1.0
+    for index, line in enumerate(lines):
+        candidate = line.strip()
+        if not candidate:
+            continue
+        score = max(
+            difflib.SequenceMatcher(None, needle, candidate).ratio()
+            for needle in needles[:8]
+        )
+        if score > best_score:
+            best_index = index
+            best_score = score
+    start = max(0, best_index - radius)
+    end = min(len(lines), best_index + radius + 1)
+    return truncate("\n".join(lines[start:end]), 4000)
+
+
 
 def _python_syntax_check(path: str, content: str) -> dict[str, Any]:
     if not str(path).endswith(".py"):
@@ -258,7 +282,15 @@ def edit_file(
                 tool="edit_file",
                 ok=False,
                 message=f"old_text not found for replacement {index}" if batch_mode else "old_text not found",
-                data={"path": path, "changed": False, "failed_replacement": index, "applied_before_failure": applied},
+                data={
+                    "path": path,
+                    "changed": False,
+                    "failed_replacement": index,
+                    "failed_old_text": truncate(old, 3000),
+                    "nearest_current_context": _nearest_edit_context(before, old),
+                    "current_sha16": sha16(before),
+                    "applied_before_failure": applied,
+                },
             )
         if expected and count != expected:
             return ToolResult(

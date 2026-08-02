@@ -17,9 +17,13 @@ class AgentState(TypedDict, total=False):
     read_only_policy: dict[str, Any]
     scope_grounding: dict[str, Any]
     scope_contract: dict[str, Any]
+    scope_expansions: list[dict[str, Any]]
     task_contract: dict[str, Any]
     needs_verification: bool
     verification_reason: str
+    implementation_batch_open: bool
+    implementation_batch_started_round: int
+    implementation_batch_remaining: list[str]
 
     run_dir: str
     trace_path: str

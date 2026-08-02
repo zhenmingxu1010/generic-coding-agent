@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import ast
+import builtins
 from pathlib import Path
+import symtable
 from typing import Any
 
 from coding_agent.workspace.run_paths import is_test_like_path
@@ -65,7 +67,13 @@ def _module_candidates(module: str, py_files: list[str], state: dict[str, Any] |
     base = module.split(".")[-1] + ".py"
     out: list[str] = []
     for rel in py_files:
-        if rel == mod_path or rel.endswith("/" + mod_path) or Path(rel).name == base:
+        exact_module_path = rel == mod_path or rel.endswith("/" + mod_path)
+        # A basename-only match is useful for legacy flat layouts such as a
+        # test importing ``analyze`` while the file lives under ``scripts/``.
+        # It is unsafe for qualified imports: ``jinja2.exceptions`` must never
+        # be associated with an unrelated local ``package/exceptions.py``.
+        flat_module_fallback = "." not in module and Path(rel).name == base
+        if exact_module_path or flat_module_fallback:
             out.append(rel)
     return out
 
@@ -80,6 +88,84 @@ def _imported_from_modules(tree: ast.AST | None) -> list[dict[str, Any]]:
             if names:
                 imports.append({"module": node.module, "names": names, "lineno": getattr(node, "lineno", None)})
     return imports
+
+
+def _changed_python_sources(state: dict[str, Any]) -> list[str]:
+    paths: list[str] = []
+    for value in state.get("changed_files") or []:
+        rel = str(value or "").replace("\\", "/")
+        if rel.endswith(".py") and not _is_test_path(rel) and rel not in paths:
+            paths.append(rel)
+    for record in state.get("repair_history") or []:
+        if not isinstance(record, dict) or not record.get("changed"):
+            continue
+        for value in record.get("files_changed") or []:
+            rel = str(value or "").replace("\\", "/")
+            if rel.endswith(".py") and not _is_test_path(rel) and rel not in paths:
+                paths.append(rel)
+    return paths
+
+
+def _undefined_global_issues(workspace: str, state: dict[str, Any]) -> list[dict[str, Any]]:
+    """Find definitely unbound global reads in changed Python source files."""
+    root = Path(workspace)
+    issues: list[dict[str, Any]] = []
+    builtin_names = set(dir(builtins))
+    for rel in _changed_python_sources(state):
+        path = root / rel
+        try:
+            source = path.read_text(encoding="utf-8", errors="replace")
+            tree = ast.parse(source, filename=rel)
+            table = symtable.symtable(source, rel, "exec")
+        except (OSError, SyntaxError):
+            continue
+        if any(
+            isinstance(node, ast.ImportFrom)
+            and any(alias.name == "*" for alias in node.names)
+            for node in ast.walk(tree)
+        ):
+            # A star import makes static global membership unknowable.
+            continue
+        module_bound = {
+            symbol.get_name()
+            for symbol in table.get_symbols()
+            if symbol.is_assigned() or symbol.is_imported() or symbol.is_namespace()
+        }
+        load_lines: dict[str, int] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                load_lines.setdefault(node.id, int(getattr(node, "lineno", 0) or 0))
+
+        undefined: set[str] = set()
+        pending = [table]
+        while pending:
+            current = pending.pop()
+            pending.extend(current.get_children())
+            for symbol in current.get_symbols():
+                name = symbol.get_name()
+                if (
+                    symbol.is_referenced()
+                    and symbol.is_global()
+                    and name not in module_bound
+                    and name not in builtin_names
+                ):
+                    undefined.add(name)
+        for name in sorted(undefined):
+            issues.append({
+                "type": "undefined_global_name",
+                "owner": "implementation",
+                "test_file": None,
+                "target_file": rel,
+                "module": None,
+                "missing_symbols": [name],
+                "available_symbols": sorted(module_bound)[:200],
+                "lineno": load_lines.get(name),
+                "message": (
+                    f"{rel} references global name {name!r} but does not "
+                    "define or import it"
+                ),
+            })
+    return issues
 
 
 def run_interface_consistency_check(workspace: str, state: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -124,4 +210,5 @@ def run_interface_consistency_check(workspace: str, state: dict[str, Any] | None
                     "message": f"{test_rel} imports {missing} from {imp['module']} but {target} does not define them",
                 })
 
+    issues.extend(_undefined_global_issues(workspace, state))
     return {"ok": not issues, "issues": issues, "checked_tests": tests, "checked_modules": sorted(module_defs)}

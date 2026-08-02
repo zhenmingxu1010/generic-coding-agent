@@ -7,12 +7,26 @@ as independently reviewable issues so external contributors can participate.
 
 - Persist LangGraph checkpoints across processes instead of relying only on
   JSON state snapshots.
-- Run the existing Python 3.10-3.13 CI matrix in the public repository and add
-  release-artifact retention.
 - Publish the complete eleven-case model-backed regression summary and selected
   sanitized audits under the exact release commit.
 - Add deterministic tests for multiple clarification rounds in the interactive
   terminal UI.
+
+Completed for the public alpha: Python 3.10–3.13 CI, wheel/sdist release assets,
+495 offline tests, the eleven-case validation record, and a three-case
+real-repository pilot.
+
+## v0.2 real-world evidence
+
+- Expand the public repair set from three localized cases to at least ten
+  eligible cases.
+- Include multi-file repair, ambiguous issue text, dependency/API migration,
+  and a repository with a larger preserved test suite.
+- Report external resolution separately from Agent success claims, including
+  final-gate precision, false positives, false negatives, changed-file scope,
+  duration, model calls, and tokens.
+- Turn every observed failure into a general runtime invariant and offline
+  regression test; never add case- or benchmark-specific policy to the Agent.
 
 ## Verification adapters
 

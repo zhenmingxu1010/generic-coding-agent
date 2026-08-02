@@ -14,7 +14,16 @@ def _is_test_path(path: str | None) -> bool:
 
 def _verification_text(state: dict[str, Any], limit: int = 20000) -> str:
     parts: list[str] = []
+    rejected = set(
+        (state.get("verification_oracle_review") or {}).get("rejected_step_names") or []
+    )
     for r in (state.get("verification") or {}).get("results", []) or []:
+        if not isinstance(r, dict):
+            continue
+        if str(r.get("name") or "") in rejected:
+            continue
+        if int(r.get("returncode", 1) or 0) == 0 and not r.get("timed_out"):
+            continue
         parts.append(f"===== {r.get('name')} =====")
         parts.append("COMMAND: " + " ".join(r.get("command", [])))
         parts.append("RETURNCODE: " + str(r.get("returncode")))
@@ -28,6 +37,8 @@ def _verification_text(state: dict[str, Any], limit: int = 20000) -> str:
 
 def _structured_test_runs(state: dict[str, Any]) -> list[dict[str, Any]]:
     test_results = state.get("test_results") or (state.get("verification") or {}).get("test_results") or {}
+    if test_results.get("accepted_preexisting_failures"):
+        return []
     return list(test_results.get("runs") or [])
 
 
@@ -145,10 +156,15 @@ def decompose_failure_issues(state: dict[str, Any]) -> list[dict[str, Any]]:
             issue["owner"] = "generated_test"
         issues.append(issue)
 
+    rejected_steps = set(
+        (state.get("verification_oracle_review") or {}).get("rejected_step_names") or []
+    )
     for result in (state.get("verification") or {}).get("results", []) or []:
         if not isinstance(result, dict):
             continue
         name = str(result.get("name") or "command")
+        if name in rejected_steps:
+            continue
         if name in {"py_compile", "pytest", "run_tests"}:
             continue
         returncode = int(result.get("returncode", 0) or 0)

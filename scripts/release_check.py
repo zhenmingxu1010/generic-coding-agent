@@ -24,7 +24,7 @@ REQUIRED_SDIST_MEMBERS = {
     "docs/ARCHITECTURE.md",
     "docs/VALIDATION.md",
     "docs/REAL_WORLD_EVALUATION.md",
-    "docs/assets/validated-demo.gif",
+    "docs/assets/validated-demo.svg",
     "docs/assets/validated-demo.txt",
     "regression_matrix/matrix.json",
     "evaluations/real_world/pilot-summary.json",

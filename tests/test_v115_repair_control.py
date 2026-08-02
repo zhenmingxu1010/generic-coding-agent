@@ -53,6 +53,72 @@ def test_interface_check_accepts_top_level_reexports_and_aliases(tmp_path: Path)
     assert out["issues"] == []
 
 
+def test_interface_check_does_not_match_qualified_external_import_by_basename(
+    tmp_path: Path,
+):
+    (tmp_path / "package").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "package" / "exceptions.py").write_text(
+        "class LocalError(Exception):\n    pass\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "tests" / "test_external.py").write_text(
+        "from jinja2.exceptions import TemplateSyntaxError\n",
+        encoding="utf-8",
+    )
+
+    out = run_interface_consistency_check(str(tmp_path), {})
+
+    assert out["ok"] is True
+    assert out["issues"] == []
+
+
+def test_interface_check_detects_unbound_global_in_changed_source(tmp_path: Path):
+    (tmp_path / "package").mkdir()
+    target = tmp_path / "package" / "service.py"
+    target.write_text(
+        "def run():\n"
+        "    try:\n"
+        "        return 1\n"
+        "    except MissingProjectError:\n"
+        "        return 0\n",
+        encoding="utf-8",
+    )
+
+    out = run_interface_consistency_check(
+        str(tmp_path),
+        {"changed_files": ["package/service.py"]},
+    )
+
+    assert out["ok"] is False
+    issue = next(
+        row for row in out["issues"] if row["type"] == "undefined_global_name"
+    )
+    assert issue["target_file"] == "package/service.py"
+    assert issue["missing_symbols"] == ["MissingProjectError"]
+    assert issue["lineno"] == 4
+
+
+def test_interface_check_accepts_imported_global_in_changed_source(tmp_path: Path):
+    (tmp_path / "package").mkdir()
+    (tmp_path / "package" / "service.py").write_text(
+        "from package.errors import ProjectError\n\n"
+        "def run():\n"
+        "    try:\n"
+        "        return 1\n"
+        "    except ProjectError:\n"
+        "        return 0\n",
+        encoding="utf-8",
+    )
+
+    out = run_interface_consistency_check(
+        str(tmp_path),
+        {"changed_files": ["package/service.py"]},
+    )
+
+    assert out["ok"] is True
+
+
 def test_failure_decomposer_combines_interface_and_runtime_contract():
     state = {
         "interface_check": {"issues": [{"message": "test imports missing function", "test_file": "tests/test_a.py", "target_file": "a.py"}]},

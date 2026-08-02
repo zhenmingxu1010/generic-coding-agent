@@ -22,3 +22,38 @@ def test_name_error_impl_beats_test_file(tmp_path):
     out = diagnose_node(state)
     assert out["failure"]["failure_type"] == "name_error_impl"
     assert out["failure"]["target_file"] == "core.py"
+
+
+def test_diagnose_ignores_raw_output_from_normalized_baseline_pass(tmp_path):
+    state = {
+        "workspace": str(tmp_path),
+        "trace_path": str(tmp_path / "trace.jsonl"),
+        "state_snapshot_path": str(tmp_path / "state.json"),
+        "verification": {
+            "results": [
+                {
+                    "name": "pytest",
+                    "command": ["python", "-m", "pytest"],
+                    "returncode": 0,
+                    "stdout": "tests/test_old.py FAILED\nAssertionError: baseline mismatch\n",
+                    "stderr": "",
+                },
+                {
+                    "name": "requested_behavior",
+                    "command": ["python", "probe.py"],
+                    "returncode": 1,
+                    "stdout": "ERROR: required exception was not raised\n",
+                    "stderr": "",
+                },
+            ]
+        },
+        "contract_check": {
+            "ok": False,
+            "failures": ["required behavior failed"],
+        },
+    }
+
+    out = diagnose_node(state)
+
+    assert out["failure"]["failure_type"] == "contract_error"
+    assert "baseline mismatch" not in out["failure"]["raw_excerpt"]

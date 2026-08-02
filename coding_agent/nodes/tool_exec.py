@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from coding_agent.core.schemas import CommandResult, ToolResult, VerificationResult
+from coding_agent.core.implementation_batch import update_implementation_batch
 from coding_agent.tools.registry import READ_TOOLS as REGISTRY_READ_TOOLS
 from coding_agent.tools.registry import WRITE_TOOLS as REGISTRY_WRITE_TOOLS
 from coding_agent.tools.registry import execute_tool
@@ -594,6 +595,29 @@ def _force_repair_policy_result(state: dict, tool: str, args: dict) -> ToolResul
     required = force.get("required_tool")
     if tool == "finish":
         return None
+    if tool == "write_file":
+        rel = _normalize_rel(_path_from_args(args, state))
+        target = (Path(str(state.get("workspace") or ".")) / rel) if rel else None
+        if (
+            rel
+            and target is not None
+            and target.is_file()
+            and not _path_is_current_agent_generated(state, rel)
+        ):
+            return ToolResult(
+                tool=tool,
+                ok=False,
+                message=(
+                    "full-file rewrite of existing project source is blocked during repair; "
+                    "use edit_file with exact replacements"
+                ),
+                data={
+                    "blocked_by_existing_source_rewrite_policy": True,
+                    "force_repair_action": force,
+                    "attempted_path": rel,
+                    "allowed_tools": sorted((allowed - {"write_file"}) | {"edit_file"}),
+                },
+            )
     if required and tool != required:
         return ToolResult(
             tool=tool,
@@ -886,7 +910,7 @@ def _record_successful_read_for_budget(state: dict, tool: str, args: dict, resul
                 "total_lines": item.get("total_lines"),
                 "sha16": item.get("sha16"),
                 "chars": item.get("chars"),
-                "content": truncate(str(item.get("content", "")), 4000),
+                "content": truncate(str(item.get("content", "")), 16000),
             },
             current_sha16=current_sha,
             source_tool=tool,
@@ -1138,6 +1162,7 @@ def tool_exec_node(state: dict) -> dict:
             _record_patch(state, result)
             _invalidate_read_cache_for_path(state, data.get("path"))
             _record_tool_write_artifact_state(state, tool, result)
+            update_implementation_batch(state)
             try:
                 existed_before = bool(data.get("existed_before")) if "existed_before" in data else bool(data.get("prewrite_backup"))
                 record_artifact_event(

@@ -8,14 +8,17 @@
 - [x] Add an OSI-approved license.
 - [x] Add security, contribution, and conduct policies.
 - [x] Add an offline CI workflow for supported Python versions.
-- [ ] Replace repository URL placeholders after the public repository is named.
-- [ ] Scan the complete Git history for credentials before the first push.
+- [x] Replace repository URL placeholders after the public repository is named.
+- [x] Scan the complete Git history for credentials. The initial public history
+  contained one root commit (`9dbcf95`); the credential/private-path scan found
+  zero matches on 2026-07-23.
 
 ## Required for `v0.1.0-alpha`
 
 - [x] Install successfully in a new virtual environment.
-- [x] Pass the complete offline test suite locally (475 tests on 2026-07-22).
-- [ ] Pass the complete offline test suite in public CI.
+- [x] Pass the complete offline test suite locally (536 tests on 2026-07-23).
+- [x] Pass the complete offline test suite in
+  [public CI](https://github.com/zhenmingxu1010/generic-coding-agent/actions).
 - [x] Build both wheel and source distribution.
 - [x] Verify the source distribution includes documentation, example configs,
   regression definitions, scripts, and the Roadmap.

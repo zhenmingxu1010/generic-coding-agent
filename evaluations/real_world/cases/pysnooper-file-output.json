@@ -1,7 +1,13 @@
 {
-  "version": "real_world_case_v1",
+  "version": "real_world_case_v2",
   "case_id": "pysnooper-file-output",
   "project": "PySnooper",
+  "categories": [
+    "repair",
+    "localized",
+    "runtime-error"
+  ],
+  "expected_change_shape": "localized",
   "repository_url": "https://github.com/cool-RR/PySnooper.git",
   "buggy_commit": "6e3d797be3fa0a746fb5b1b7c7fea78eb926c208",
   "fixed_commit": "15555ed760000b049aff8fecc79d29339c1224c3",

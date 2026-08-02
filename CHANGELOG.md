@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Real-world evaluation schema v2 with task categories, expected change shape,
+  evaluator-owned acceptance, final-gate precision/recall, modification scope,
+  duration, model-call, and token metrics.
+- Public release badges and a maintainable accessible SVG validation summary.
 - Post-scan task-completeness assessment for short and colloquial prompts.
 - Explicit implementation assumptions and `implementation:*` verification
   atoms, kept separate from exact-evidence user requirements.
@@ -24,6 +28,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Public documentation now reflects the released repository, 536-test local
+  gate, successful public CI, published Alpha tag, and measured pilot cost.
 - Colloquial Chinese create, repair, modify, and inspection intent coverage.
 - The provider-neutral capability matrix now includes eleven scenarios,
   including short prompts, ambiguity handling, and conversational inspection.
@@ -38,6 +44,9 @@ All notable changes to this project are documented here. The format follows
   locking, and streamed model responses now obey a total wall-clock deadline.
 - The release gate proves wheel imports originate from an isolated temporary
   installation instead of being shadowed by the source checkout.
+- The real-repository pilot now includes an externally accepted three-file
+  Cookiecutter repair and reports its conservative Agent final-gate false
+  negative instead of conflating external acceptance with self-reported success.
 
 ### Planned
 

@@ -175,7 +175,10 @@ def _pytest_targets(cmd: list[str] | str) -> list[str]:
             continue
         if arg.startswith("-"):
             continue
-        targets.append(normalize_rel(arg.split("::", 1)[0]))
+        # Preserve pytest node selectors. Dropping ``::test_name`` silently
+        # broadens a missing or misspelled scenario to the whole file and can
+        # turn unrelated passing tests into false requirement evidence.
+        targets.append(normalize_rel(arg))
     return targets
 
 

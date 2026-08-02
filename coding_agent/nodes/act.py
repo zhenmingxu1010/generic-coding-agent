@@ -22,6 +22,14 @@ Rules:
 - For repairs, make the smallest evidence-backed change. Preserve return shapes,
   special-case branches, aliases, and adjacent behavior unless the task or a
   failing execution explicitly requires changing them.
+- When an initial multi-file implementation batch is open, complete the
+  remaining task-required source layers before requesting verification. Do not
+  treat a successful edit to one file as completion of the whole task.
+- Modify the existing reachable execution path that owns the requested
+  behavior. Do not satisfy a change request by adding a new wrapper, alternate
+  entry point, or helper that no existing caller invokes. If a wrapper is
+  explicitly requested, wire it into the real call graph and preserve the
+  original public entry point's contract.
 - Do not apply a parameter or normalization to additional branches merely for
   consistency. Unrelated existing branches are compatibility constraints.
 - When writing code, write complete valid files.
@@ -46,7 +54,12 @@ def act_node(state: dict) -> dict:
     recent_actions = state.get("action_history", [])[-8:]
     user = (
         f"Task: {state.get('task')}\n\n"
-        f"Mode: {state.get('mode')}\nSupervisor: {state.get('supervisor')}\nRead-only mode: {state.get('read_only')}\nTask contract: {state.get('task_contract')}\nNeeds verification: {state.get('needs_verification')} ({state.get('verification_reason')})\n\n"
+        f"Mode: {state.get('mode')}\nSupervisor: {state.get('supervisor')}\nRead-only mode: {state.get('read_only')}\n"
+        f"Write scope contract: {state.get('scope_contract')}\n"
+        f"Audited scope expansions: {state.get('scope_expansions', [])}\n"
+        f"Task contract: {state.get('task_contract')}\nNeeds verification: {state.get('needs_verification')} ({state.get('verification_reason')})\n\n"
+        f"Initial implementation batch: open={state.get('implementation_batch_open', False)} "
+        f"remaining={state.get('implementation_batch_remaining', [])}\n\n"
         f"Hard invariants:\n" + "\n".join(f"- {x}" for x in state.get("invariants", [])) + "\n\n"
         f"Context summary:\n{state.get('context_summary','')}\n\n"
         f"Plan:\n{state.get('plan')}\n"

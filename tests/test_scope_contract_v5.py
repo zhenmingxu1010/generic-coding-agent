@@ -135,6 +135,99 @@ def test_allowed_modify_path_overrides_same_path_stale_protection(tmp_path: Path
     assert can_execute_write_intent(state, "tests/test_calculator.py", exists=True)[0] is False
 
 
+def test_llm_scope_can_expand_to_successfully_read_neighboring_source(tmp_path: Path):
+    package = tmp_path / "package"
+    package.mkdir()
+    (package / "core.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (package / "hooks.py").write_text("def run():\n    return 0\n", encoding="utf-8")
+    ensure_workspace_baseline(tmp_path)
+    scope = {
+        "allowed_modify_paths": ["package/core.py"],
+        "semantic_write_scope_source": "llm",
+    }
+    state = {
+        "workspace": str(tmp_path),
+        "task": "Fix the package behavior.",
+        "mode": "debug",
+        "read_only": False,
+        "scope_contract": scope,
+        "action_history": [{
+            "tool": "read_file",
+            "args": {"path": "package/hooks.py"},
+            "ok": True,
+        }],
+    }
+
+    ok, reason, detail = can_execute_write_intent(
+        state, "package/hooks.py", exists=True
+    )
+
+    assert ok is True
+    assert "scope expansion" in reason
+    assert detail["scope_expansion"] is True
+    assert scope["expanded_modify_paths"] == ["package/hooks.py"]
+    assert state["scope_expansions"][0]["source"] == "runtime_read_grounded_scope_expansion"
+
+
+def test_llm_scope_does_not_expand_to_unread_or_unrelated_source(tmp_path: Path):
+    (tmp_path / "package").mkdir()
+    (tmp_path / "other").mkdir()
+    for rel in ("package/core.py", "package/blind.py", "other/read.py"):
+        (tmp_path / rel).write_text("VALUE = 1\n", encoding="utf-8")
+    ensure_workspace_baseline(tmp_path)
+    scope = {
+        "allowed_modify_paths": ["package/core.py"],
+        "semantic_write_scope_source": "llm",
+    }
+    state = {
+        "workspace": str(tmp_path),
+        "task": "Fix the package behavior.",
+        "mode": "debug",
+        "read_only": False,
+        "scope_contract": scope,
+        "action_history": [{
+            "tool": "read_file",
+            "args": {"path": "other/read.py"},
+            "ok": True,
+        }],
+    }
+
+    assert can_execute_write_intent(
+        state, "package/blind.py", exists=True
+    )[0] is False
+    assert can_execute_write_intent(
+        state, "other/read.py", exists=True
+    )[0] is False
+
+
+def test_explicit_user_scope_never_expands_from_read_history(tmp_path: Path):
+    (tmp_path / "package").mkdir()
+    (tmp_path / "package" / "core.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "package" / "hooks.py").write_text("VALUE = 2\n", encoding="utf-8")
+    ensure_workspace_baseline(tmp_path)
+    scope = {"allowed_modify_paths": ["package/core.py"]}
+    state = {
+        "workspace": str(tmp_path),
+        "task": "Only modify package/core.py.",
+        "mode": "debug",
+        "read_only": False,
+        "scope_contract": scope,
+        "action_history": [{
+            "tool": "read_file",
+            "args": {"path": "package/hooks.py"},
+            "ok": True,
+        }],
+    }
+
+    ok, reason, detail = can_execute_write_intent(
+        state, "package/hooks.py", exists=True
+    )
+
+    assert ok is False
+    assert "outside the allowed" in reason
+    assert detail["outside_allowed_modify_scope"] is True
+
+
 def test_protected_path_is_not_create_target_or_inferred_test():
     intent = classify_task_intent(ISOLATED_CREATE_TASK, {"read_only": False})
     targets = _required_create_targets(ISOLATED_CREATE_TASK, {"expected_artifacts": ["tests"]}, intent)
@@ -226,6 +319,44 @@ def test_final_gate_rejects_protected_original_path_write():
 
     assert gate["ok"] is False
     assert "protected_path_written:src/original.py" in gate["failures"]
+
+
+def test_final_gate_rejects_existing_change_outside_declared_and_expanded_scope(
+    tmp_path: Path,
+):
+    (tmp_path / "package").mkdir()
+    (tmp_path / "package" / "core.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "package" / "other.py").write_text("VALUE = 2\n", encoding="utf-8")
+    ensure_workspace_baseline(tmp_path)
+    state = {
+        "workspace": str(tmp_path),
+        "thread_id": "t",
+        "mode": "modify",
+        "read_only": False,
+        "scope_contract": {
+            "allowed_modify_paths": ["package/core.py"],
+            "expanded_modify_paths": [],
+        },
+        "verification": {"ok": True},
+        "contract_ok": True,
+        "needs_verification": False,
+        "changed_files": ["package/other.py"],
+        "generated_files": [],
+        "repair_history": [],
+        "requirement_atom_summary": {
+            "required_total": 1,
+            "required_failed": 0,
+            "required_unverified": 0,
+        },
+    }
+
+    gate = compute_final_gate(state)
+
+    assert gate["ok"] is False
+    assert (
+        "out_of_scope_existing_path_written:package/other.py"
+        in gate["failures"]
+    )
 
 
 def test_write_scope_audit_splits_source_files_and_internal_tests():

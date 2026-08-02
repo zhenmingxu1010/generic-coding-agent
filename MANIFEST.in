@@ -7,7 +7,7 @@ include SECURITY.md
 include VERSION
 include requirements.txt
 recursive-include configs *.yaml
-recursive-include docs *.md *.txt *.gif
+recursive-include docs *.md *.txt *.gif *.svg
 recursive-include evaluations *.py *.json *.md
 recursive-include examples *.txt
 recursive-include regression_matrix *.json *.md

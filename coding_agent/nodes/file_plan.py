@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 from typing import Any
@@ -347,6 +348,18 @@ def _sanitize_verify_steps(
                     "name": name,
                     "corrections": corrections,
                 })
+            signature_issues = _sandbox_python_signature_issues(
+                workspace,
+                cmd,
+                sandbox,
+            )
+            if signature_issues:
+                skipped.append({
+                    "step": raw,
+                    "reason": "verification probe calls a local function with missing required arguments",
+                    "signature_issues": signature_issues,
+                })
+                continue
         item = {
             "name": name,
             "command": cmd,
@@ -377,6 +390,100 @@ def _sanitize_verify_steps(
     if skipped:
         state.setdefault("skipped_file_plan_verify_steps", []).extend(skipped)
     return kept
+
+
+def _sandbox_python_signature_issues(
+    workspace: Path,
+    command: list[str],
+    sandbox: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Reject definite local-call arity mistakes in generated Python probes."""
+    if len(command) < 2 or Path(command[0]).name.lower() not in {
+        "python", "python.exe", "python3", "python3.exe",
+    }:
+        return []
+    command_path = str(command[1]).replace("\\", "/")
+    fixture = next(
+        (
+            item for item in sandbox.get("files") or []
+            if isinstance(item, dict)
+            and str(item.get("path") or "").replace("\\", "/") == command_path
+        ),
+        None,
+    )
+    if not fixture:
+        return []
+    try:
+        probe = ast.parse(str(fixture.get("content") or ""), filename=command_path)
+    except SyntaxError:
+        return []
+
+    imports: dict[str, tuple[str, str]] = {}
+    for node in probe.body:
+        if not isinstance(node, ast.ImportFrom) or node.level != 0 or not node.module:
+            continue
+        for alias in node.names:
+            if alias.name == "*":
+                continue
+            imports[alias.asname or alias.name] = (node.module, alias.name)
+
+    signatures: dict[str, tuple[list[str], int]] = {}
+    for local_name, (module, symbol) in imports.items():
+        source_path = workspace / (module.replace(".", "/") + ".py")
+        if not source_path.is_file():
+            package_path = workspace / module.replace(".", "/") / "__init__.py"
+            source_path = package_path if package_path.is_file() else source_path
+        try:
+            source_tree = ast.parse(
+                source_path.read_text(encoding="utf-8", errors="replace"),
+                filename=str(source_path),
+            )
+        except (OSError, SyntaxError):
+            continue
+        target = next(
+            (
+                node for node in source_tree.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == symbol
+            ),
+            None,
+        )
+        if target is None:
+            continue
+        positional = [*target.args.posonlyargs, *target.args.args]
+        required_count = max(0, len(positional) - len(target.args.defaults))
+        signatures[local_name] = ([arg.arg for arg in positional], required_count)
+
+    issues: list[dict[str, Any]] = []
+    for node in ast.walk(probe):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+            continue
+        signature = signatures.get(node.func.id)
+        if not signature:
+            continue
+        if any(isinstance(arg, ast.Starred) for arg in node.args):
+            continue
+        if any(keyword.arg is None for keyword in node.keywords):
+            continue
+        positional_names, required_count = signature
+        supplied = min(len(node.args), required_count)
+        supplied_names = set(positional_names[:supplied])
+        supplied_names.update(
+            keyword.arg for keyword in node.keywords if keyword.arg is not None
+        )
+        missing = [
+            name
+            for name in positional_names[:required_count]
+            if name not in supplied_names
+        ]
+        if missing:
+            issues.append({
+                "probe": command_path,
+                "function": node.func.id,
+                "line": int(getattr(node, "lineno", 0) or 0),
+                "missing_arguments": missing,
+            })
+    return issues
 
 
 def _safe_sandbox_rel(value: Any, *, allow_glob: bool = False) -> str:

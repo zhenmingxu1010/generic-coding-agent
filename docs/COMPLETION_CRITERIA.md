@@ -35,9 +35,24 @@ A local `v0.1.0-alpha` candidate is complete when:
 - release, security, contribution, architecture, validation, demo, and
   limitation documents are present.
 
-Public release completion additionally requires account-owned actions that
-cannot be proved locally: choose the repository URL, run public CI on the exact
-commit, scan the resulting Git history, create the tag, and publish the release.
+Public release completion additionally required choosing the repository URL,
+running public CI on the exact commit, scanning the resulting Git history,
+creating the tag, and publishing the release. Those account-owned actions were
+completed for `v0.1.0-alpha` on 2026-07-23.
+
+## v0.2 real-world evidence scope
+
+The next evidence milestone is complete when:
+
+- at least ten eligible real-repository cases are published with reproducible
+  provenance and hidden external acceptance;
+- the set includes multi-file repair, ambiguous issue text, dependency/API
+  migration, and a larger preserved test suite;
+- external resolution is reported separately from the Agent's final claim;
+- success-claim precision, false positives, false negatives, changed-file
+  scope, duration, model calls, and tokens are reported;
+- every runtime change prompted by an evaluation failure represents a general
+  failure class and has an offline regression test.
 
 ## Portfolio scope
 

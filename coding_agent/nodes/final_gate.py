@@ -336,6 +336,29 @@ def _protected_scope_outputs(state: dict[str, Any], write_scope_audit: dict[str,
     return out
 
 
+def _out_of_scope_existing_outputs(
+    state: dict[str, Any],
+    write_scope_audit: dict[str, Any],
+) -> list[str]:
+    """Return existing project files changed outside declared/expanded scope."""
+    scope = state.get("scope_contract") or (state.get("task_intent") or {}).get("scope_contract") or {}
+    allowed = {
+        _norm(str(path))
+        for path in (
+            list(scope.get("allowed_modify_paths") or [])
+            + list(scope.get("expanded_modify_paths") or [])
+        )
+        if _norm(str(path))
+    }
+    if not scope.get("allowed_modify_paths"):
+        return []
+    return sorted({
+        _norm(str(path))
+        for path in write_scope_audit.get("existing_project_modified_files") or []
+        if _norm(str(path)) and _norm(str(path)) not in allowed
+    })
+
+
 def compute_final_gate(state: dict[str, Any]) -> dict[str, Any]:
     mode = state.get("mode")
     verification = state.get("verification") or {}
@@ -394,6 +417,9 @@ def compute_final_gate(state: dict[str, Any]) -> dict[str, Any]:
     protected_outputs = _protected_scope_outputs(state, write_scope_audit)
     if protected_outputs:
         failures.append("protected_path_written:" + ",".join(protected_outputs[:5]))
+    out_of_scope_outputs = _out_of_scope_existing_outputs(state, write_scope_audit)
+    if out_of_scope_outputs:
+        failures.append("out_of_scope_existing_path_written:" + ",".join(out_of_scope_outputs[:5]))
 
     if mode in WRITE_MODES or mode in VERIFY_ONLY_MODES:
         if not verification:

@@ -1,5 +1,10 @@
 # Generic Coding Agent
 
+[![CI](https://github.com/zhenmingxu1010/generic-coding-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/zhenmingxu1010/generic-coding-agent/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/zhenmingxu1010/generic-coding-agent?include_prereleases)](https://github.com/zhenmingxu1010/generic-coding-agent/releases)
+[![Python](https://img.shields.io/badge/python-3.10--3.13-blue)](https://www.python.org/)
+[![License](https://img.shields.io/github/license/zhenmingxu1010/generic-coding-agent)](LICENSE)
+
 An evidence-driven coding agent for understanding repositories, generating or
 modifying code, executing verification, repairing failures, and exporting an
 auditable run record.
@@ -7,11 +12,11 @@ auditable run record.
 > Status: **alpha**. The project is useful for experimentation and portfolio
 > demonstrations, but it should run with limited permissions and human review.
 
-![Validated terminal demo](docs/assets/validated-demo.gif)
+![Validated terminal summary](docs/assets/validated-demo.svg)
 
-The recording summarizes the checked-in validation transcript: 11/11 detailed
-model-backed scenarios, 475 offline tests, isolated wheel import, and the local
-release gate. See [Demo](docs/DEMO.md) and
+The summary records release evidence: 11/11 detailed model-backed scenarios,
+536 offline tests, isolated wheel import, and the local release gate. See
+[Demo](docs/DEMO.md) and
 [validation transcript](docs/assets/validated-demo.txt) for reproducible steps
 and accessible text.
 
@@ -77,7 +82,7 @@ Requirements: Python 3.10 or newer and an OpenAI-compatible chat-completions
 endpoint.
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/zhenmingxu1010/generic-coding-agent.git
 cd generic-coding-agent
 
 python3 -m venv .venv
@@ -216,8 +221,13 @@ See [Security model](docs/SECURITY_MODEL.md) and [Security policy](SECURITY.md).
 
 ## Current limitations
 
-- The current real-repository repair pilot is only three localized historical
-  defects; it is not a claim of broad SWE-bench or multi-file issue performance.
+- The current real-repository repair pilot is only four historical defects:
+  three localized and one multi-file case. It is not a claim of broad
+  SWE-bench or multi-file issue performance.
+- The four-case pilot used 47 model calls and 431,051 reported tokens. External
+  acceptance passed 4/4, while the Agent conservatively reported one false
+  negative; the sample does not demonstrate low-cost or perfect autonomous
+  verification.
 - Verification is strongest for Python/pytest projects; direct POSIX shell
   scripts and standard-input scenarios are also supported.
 - The in-memory LangGraph checkpointer does not persist graph state across

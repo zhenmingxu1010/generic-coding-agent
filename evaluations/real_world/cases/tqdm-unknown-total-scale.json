@@ -1,7 +1,14 @@
 {
-  "version": "real_world_case_v1",
+  "version": "real_world_case_v2",
   "case_id": "tqdm-unknown-total-scale",
   "project": "tqdm",
+  "categories": [
+    "repair",
+    "localized",
+    "edge-case",
+    "compatibility"
+  ],
+  "expected_change_shape": "localized",
   "repository_url": "https://github.com/tqdm/tqdm.git",
   "buggy_commit": "03b347646492131d889871939b40457d29147216",
   "fixed_commit": "964dee631d0ed30e2f799b42fc58ba5e73795a08",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from coding_agent.core.implementation_batch import update_implementation_batch
 from coding_agent.graph import route_after_context, route_after_tool, route_after_verify
 
 
@@ -49,7 +50,7 @@ def test_route_after_verify_stops_after_bounded_evidence_replanning():
             "required_failed": 0,
             "required_unverified": 1,
         },
-        "verification_plan_attempts": 2,
+        "verification_plan_attempts": 3,
         "verification_claims": {"requirement:behavior": {"status": "unverified"}},
     }
 
@@ -70,7 +71,7 @@ def test_exhausted_document_evidence_routes_to_deliverable_audit(tmp_path):
             "required_failed": 0,
             "required_unverified": 1,
         },
-        "verification_plan_attempts": 2,
+        "verification_plan_attempts": 3,
         "verification_claims": {"requirement:documented": {"status": "unverified"}},
         "scope_contract": {"allowed_modify_paths": ["tool.py"]},
         "changed_files": [],
@@ -135,6 +136,77 @@ def test_route_after_tool_allows_final_verification_after_last_successful_write(
 
     assert route == "repo_scan"
     assert "stopped_reason" not in state
+
+
+def test_initial_multifile_modify_batches_remaining_source_edits_before_verification():
+    state = {
+        "mode": "modify",
+        "read_only": False,
+        "max_rounds": 20,
+        "round_idx": 4,
+        "needs_verification": True,
+        "scope_contract": {
+            "allowed_modify_paths": ["errors.py", "runner.py", "service.py"],
+        },
+        "changed_files": ["errors.py"],
+        "last_tool_result": {
+            "tool": "edit_file",
+            "ok": True,
+            "data": {"changed": True, "path": "errors.py"},
+        },
+    }
+
+    update_implementation_batch(state)
+    assert route_after_tool(state) == "context_compress"
+    assert state["implementation_batch_open"] is True
+    assert state["implementation_batch_remaining"] == ["runner.py", "service.py"]
+    assert route_after_context(state) == "act"
+
+
+def test_initial_multifile_batch_verifies_after_all_scoped_targets_are_changed():
+    state = {
+        "mode": "modify",
+        "read_only": False,
+        "max_rounds": 20,
+        "round_idx": 6,
+        "needs_verification": True,
+        "implementation_batch_open": True,
+        "implementation_batch_started_round": 4,
+        "scope_contract": {
+            "allowed_modify_paths": ["errors.py", "runner.py", "service.py"],
+        },
+        "changed_files": ["errors.py", "runner.py", "service.py"],
+        "last_tool_result": {
+            "tool": "edit_file",
+            "ok": True,
+            "data": {"changed": True, "path": "service.py"},
+        },
+    }
+
+    update_implementation_batch(state)
+    assert route_after_tool(state) == "repo_scan"
+    assert state["implementation_batch_open"] is False
+    assert state["implementation_batch_remaining"] == []
+
+
+def test_single_file_modify_still_verifies_immediately_after_edit():
+    state = {
+        "mode": "modify",
+        "read_only": False,
+        "max_rounds": 20,
+        "round_idx": 2,
+        "needs_verification": True,
+        "scope_contract": {"allowed_modify_paths": ["tool.py"]},
+        "changed_files": ["tool.py"],
+        "last_tool_result": {
+            "tool": "edit_file",
+            "ok": True,
+            "data": {"changed": True, "path": "tool.py"},
+        },
+    }
+
+    update_implementation_batch(state)
+    assert route_after_tool(state) == "repo_scan"
 
 
 def test_route_after_tool_returns_command_policy_rejection_to_action_loop():
@@ -313,6 +385,25 @@ def test_route_after_verify_stops_repeated_unchanged_failure():
     assert route_after_verify(state) == "report"
     assert state["stopped_reason"] == "repeated_verification_failure"
     assert state["failure_owner"] == "verification_controller"
+    assert state["needs_verification"] is False
+
+
+def test_repeated_evidence_gap_reaches_deliverable_review(tmp_path):
+    (tmp_path / "tool.py").write_text("def run():\n    pass\n", encoding="utf-8")
+    state = {
+        "workspace": str(tmp_path),
+        "mode": "modify",
+        "read_only": False,
+        "verification": {"ok": False, "results": [{"name": "compile", "returncode": 0}]},
+        "requirement_atom_summary": {"required_failed": 0, "required_unverified": 1},
+        "verification_plan_attempts": 3,
+        "verification_stalled": True,
+        "verification_failure_repeat_count": 3,
+        "scope_contract": {"allowed_modify_paths": ["tool.py"]},
+        "changed_files": ["tool.py"],
+    }
+
+    assert route_after_verify(state) == "deliverable_review"
     assert state["needs_verification"] is False
 
 

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -13,8 +15,24 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-SCHEMA_VERSION = "real_world_case_v1"
-RESULT_VERSION = "real_world_result_v1"
+SCHEMA_VERSION = "real_world_case_v2"
+LEGACY_SCHEMA_VERSION = "real_world_case_v1"
+RESULT_VERSION = "real_world_result_v2"
+LEGACY_RESULT_VERSION = "real_world_result_v1"
+EXPECTED_CHANGE_SHAPES = {"localized", "multi_file", "either"}
+ENVIRONMENT_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
+PROTECTED_ENVIRONMENT_NAMES = {
+    "HOME",
+    "PATH",
+    "PYTHONHOME",
+    "PYTHONPATH",
+    "VIRTUAL_ENV",
+}
+INTERNAL_CHANGE_PREFIXES = (
+    ".coding_agent/",
+    ".coding_agent_test/",
+    ".pytest_cache/",
+)
 
 
 @dataclass(frozen=True)
@@ -30,6 +48,10 @@ class CaseSpec:
     test_command: tuple[str, ...]
     protected_globs: tuple[str, ...] = ("tests/**",)
     timeout_seconds: int = 120
+    categories: tuple[str, ...] = ("repair",)
+    expected_change_shape: str = "either"
+    test_environment: tuple[tuple[str, str], ...] = ()
+    protected_ignore_globs: tuple[str, ...] = ()
 
 
 def _required_text(data: dict[str, Any], name: str) -> str:
@@ -50,7 +72,7 @@ def _string_tuple(data: dict[str, Any], name: str, *, required: bool = True) -> 
 
 def load_case(path: str | Path) -> CaseSpec:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
-    if data.get("version") != SCHEMA_VERSION:
+    if data.get("version") not in {SCHEMA_VERSION, LEGACY_SCHEMA_VERSION}:
         raise ValueError(f"unsupported case version: {data.get('version')!r}")
     timeout = data.get("timeout_seconds", 120)
     if not isinstance(timeout, int) or timeout < 1:
@@ -68,6 +90,26 @@ def load_case(path: str | Path) -> CaseSpec:
         ):
             raise ValueError("each hidden_files item requires string path and content")
         hidden_files.append((item["path"], item["content"]))
+    categories = _string_tuple(data, "categories", required=False) or ("repair",)
+    expected_change_shape = data.get("expected_change_shape", "either")
+    if expected_change_shape not in EXPECTED_CHANGE_SHAPES:
+        allowed = ", ".join(sorted(EXPECTED_CHANGE_SHAPES))
+        raise ValueError(f"expected_change_shape must be one of: {allowed}")
+    test_environment_raw = data.get("test_environment") or {}
+    if not isinstance(test_environment_raw, dict):
+        raise ValueError("test_environment must be an object")
+    test_environment: list[tuple[str, str]] = []
+    for name, value in test_environment_raw.items():
+        if (
+            not isinstance(name, str)
+            or not ENVIRONMENT_NAME.fullmatch(name)
+            or name in PROTECTED_ENVIRONMENT_NAMES
+            or name.startswith("AGENT_")
+        ):
+            raise ValueError(f"test_environment contains protected name: {name!r}")
+        if not isinstance(value, str):
+            raise ValueError(f"test_environment value must be a string: {name}")
+        test_environment.append((name, value))
     return CaseSpec(
         case_id=_required_text(data, "case_id"),
         project=_required_text(data, "project"),
@@ -80,6 +122,12 @@ def load_case(path: str | Path) -> CaseSpec:
         test_command=_string_tuple(data, "test_command"),
         protected_globs=_string_tuple(data, "protected_globs", required=False) or ("tests/**",),
         timeout_seconds=timeout,
+        categories=categories,
+        expected_change_shape=expected_change_shape,
+        test_environment=tuple(sorted(test_environment)),
+        protected_ignore_globs=_string_tuple(
+            data, "protected_ignore_globs", required=False
+        ),
     )
 
 
@@ -180,7 +228,30 @@ def _render_command(command: Iterable[str], *, python: Path, workspace: Path) ->
     return [part.format_map(values) for part in command]
 
 
-def snapshot_paths(root: Path, globs: Iterable[str]) -> dict[str, str]:
+def _target_environment(
+    spec: CaseSpec,
+    *,
+    test_python: Path,
+    isolated_home: Path,
+) -> dict[str, str]:
+    isolated_home.mkdir(parents=True, exist_ok=True)
+    python = test_python.expanduser().absolute()
+    env = os.environ.copy()
+    env["HOME"] = str(isolated_home)
+    env["PATH"] = os.pathsep.join(
+        [str(python.parent), env.get("PATH", "")]
+    ).rstrip(os.pathsep)
+    env["VIRTUAL_ENV"] = str(python.parent.parent)
+    env["PYTHONNOUSERSITE"] = "1"
+    env.update(dict(spec.test_environment))
+    return env
+
+
+def snapshot_paths(
+    root: Path,
+    globs: Iterable[str],
+    ignore_globs: Iterable[str] = (),
+) -> dict[str, str]:
     matches: set[Path] = set()
     for pattern in globs:
         patterns = (pattern, f"{pattern}/*") if pattern.endswith("/**") else (pattern,)
@@ -196,6 +267,8 @@ def snapshot_paths(root: Path, globs: Iterable[str]) -> dict[str, str]:
         ):
             continue
         relative = path.relative_to(root).as_posix()
+        if any(fnmatch.fnmatchcase(relative, pattern) for pattern in ignore_globs):
+            continue
         result[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
     return result
 
@@ -212,6 +285,23 @@ def _changed_paths(workspace: Path) -> list[str]:
     return sorted(set(paths))
 
 
+def _project_changed_paths(
+    paths: Iterable[str],
+    ignore_globs: Iterable[str] = (),
+) -> list[str]:
+    return sorted(
+        {
+            path
+            for path in paths
+            if not path.startswith(INTERNAL_CHANGE_PREFIXES)
+            and not any(
+                fnmatch.fnmatchcase(path, pattern)
+                for pattern in ignore_globs
+            )
+        }
+    )
+
+
 def _read_agent_final(agent_project: Path, thread_id: str) -> dict[str, Any] | None:
     runs_root = Path(os.getenv("AGENT_RUNS_DIR") or (agent_project / ".agent_runs"))
     candidates = list(runs_root.glob(f"*/{thread_id}/final.json"))
@@ -223,6 +313,32 @@ def _read_agent_final(agent_project: Path, thread_id: str) -> dict[str, Any] | N
     except (OSError, json.JSONDecodeError):
         return None
     return value if isinstance(value, dict) else None
+
+
+def _change_shape_matches(expected: str, changed_paths: Iterable[str]) -> bool:
+    count = len(tuple(changed_paths))
+    if expected == "localized":
+        return count <= 1
+    if expected == "multi_file":
+        return count >= 2
+    return True
+
+
+def _external_acceptance_passed(
+    *,
+    agent_process: dict[str, Any],
+    protected_mutations: Iterable[str],
+    hidden_patch: dict[str, Any],
+    hidden_test: dict[str, Any] | None,
+) -> bool:
+    """Return the evaluator-owned outcome independently of the Agent's claim."""
+    return (
+        not bool(agent_process.get("timed_out"))
+        and not tuple(protected_mutations)
+        and hidden_patch.get("returncode") == 0
+        and hidden_test is not None
+        and hidden_test.get("returncode") == 0
+    )
 
 
 def run_evaluation(
@@ -245,6 +361,11 @@ def run_evaluation(
     control_workspace = case_root / "fixed-control"
     agent_workspace = case_root / "agent-workspace"
     patch = _hidden_patch(spec, source_repo)
+    target_env = _target_environment(
+        spec,
+        test_python=test_python,
+        isolated_home=case_root / "home",
+    )
 
     _prepare_checkout(source_repo, baseline_workspace, spec.buggy_commit)
     baseline_patch = _apply_patch(baseline_workspace, patch, spec.timeout_seconds)
@@ -255,6 +376,7 @@ def run_evaluation(
             _render_command(spec.test_command, python=test_python, workspace=baseline_workspace),
             cwd=baseline_workspace,
             timeout=spec.timeout_seconds,
+            env=target_env,
         )
 
     _prepare_checkout(source_repo, control_workspace, spec.fixed_commit)
@@ -263,6 +385,7 @@ def run_evaluation(
         _render_command(spec.test_command, python=test_python, workspace=control_workspace),
         cwd=control_workspace,
         timeout=spec.timeout_seconds,
+        env=target_env,
     )
 
     reachable = (
@@ -292,7 +415,11 @@ def run_evaluation(
         return report
 
     _prepare_checkout(source_repo, agent_workspace, spec.buggy_commit)
-    protected_before = snapshot_paths(agent_workspace, spec.protected_globs)
+    protected_before = snapshot_paths(
+        agent_workspace,
+        spec.protected_globs,
+        spec.protected_ignore_globs,
+    )
     thread_id = f"real-world-{spec.case_id}"
     agent_command = [
         str(agent_python),
@@ -310,7 +437,7 @@ def run_evaluation(
         "--max-repair-calls",
         str(max_repair_calls),
     ]
-    agent_env = os.environ.copy()
+    agent_env = target_env.copy()
     agent_env.setdefault("AGENT_LLM_TIMEOUT", "60")
     agent_env.setdefault("AGENT_LLM_TIMEOUT_RETRIES", "0")
     agent_env["AGENT_TARGET_PYTHON"] = str(test_python.expanduser().absolute())
@@ -320,13 +447,21 @@ def run_evaluation(
         timeout=max(spec.timeout_seconds, 900),
         env=agent_env,
     )
-    protected_after = snapshot_paths(agent_workspace, spec.protected_globs)
+    protected_after = snapshot_paths(
+        agent_workspace,
+        spec.protected_globs,
+        spec.protected_ignore_globs,
+    )
     protected_mutations = sorted(
         path
         for path in set(protected_before) | set(protected_after)
         if protected_before.get(path) != protected_after.get(path)
     )
     changed_paths = _changed_paths(agent_workspace)
+    changed_project_paths = _project_changed_paths(
+        changed_paths,
+        spec.protected_ignore_globs,
+    )
 
     evaluation_patch = _apply_patch(agent_workspace, patch, spec.timeout_seconds)
     hidden_test = None
@@ -336,21 +471,23 @@ def run_evaluation(
             _render_command(spec.test_command, python=test_python, workspace=agent_workspace),
             cwd=agent_workspace,
             timeout=spec.timeout_seconds,
+            env=target_env,
         )
-    resolved = (
-        agent_result["returncode"] == 0
-        and not protected_mutations
-        and evaluation_patch["returncode"] == 0
-        and hidden_test is not None
-        and hidden_test["returncode"] == 0
+    external_acceptance_passed = _external_acceptance_passed(
+        agent_process=agent_result,
+        protected_mutations=protected_mutations,
+        hidden_patch=evaluation_patch,
+        hidden_test=hidden_test,
     )
+    agent_final = _read_agent_final(agent_project.resolve(), thread_id)
+    agent_reported_ok = bool(agent_final and agent_final.get("ok") is True)
     report.update(
         {
-            "status": "resolved" if resolved else "unresolved",
-            "resolved": resolved,
+            "status": "resolved" if external_acceptance_passed else "unresolved",
+            "resolved": external_acceptance_passed,
             "agent": {
                 "process": agent_result,
-                "final": _read_agent_final(agent_project.resolve(), thread_id),
+                "final": agent_final,
                 "changed_paths_before_hidden_tests": changed_paths,
                 "protected_mutations": protected_mutations,
             },
@@ -358,6 +495,19 @@ def run_evaluation(
                 "hidden_patch": evaluation_patch,
                 "installed_hidden_files": installed_hidden_files if evaluation_patch["returncode"] == 0 else [],
                 "hidden_test": hidden_test,
+                "passed": external_acceptance_passed,
+            },
+            "measurements": {
+                "agent_reported_ok": agent_reported_ok,
+                "changed_project_file_count": len(changed_project_paths),
+                "changed_top_level_areas": sorted(
+                    {path.split("/", 1)[0] for path in changed_project_paths}
+                ),
+                "multi_file_change": len(changed_project_paths) >= 2,
+                "expected_change_shape": spec.expected_change_shape,
+                "change_shape_matches": _change_shape_matches(
+                    spec.expected_change_shape, changed_project_paths
+                ),
             },
         }
     )
@@ -368,7 +518,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run one isolated, hidden-test real-world repair evaluation."
     )
-    parser.add_argument("--case", required=True, help="Path to a real_world_case_v1 JSON file.")
+    parser.add_argument(
+        "--case",
+        required=True,
+        help="Path to a real_world_case_v2 JSON file (v1 remains readable).",
+    )
     parser.add_argument("--source-repo", required=True, help="Local full clone containing both commits.")
     parser.add_argument("--work-root", required=True, help="Disposable directory for evaluation workspaces.")
     parser.add_argument("--test-python", required=True, help="Python executable for target-project tests.")

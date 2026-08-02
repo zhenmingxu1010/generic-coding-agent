@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -39,7 +40,27 @@ Rules:
   that exception and translate it into the CLI's documented stderr/exit-code
   behavior. Do not flag one public interface for correctly implementing its
   own clause merely because another interface has a different error contract.
+- Trace multi-layer failure handling one boundary at a time. If a lower-level
+  operation must convert a failure into an exception and an orchestrator must
+  clean up or translate that exception, verify both layers independently. A
+  higher layer manufacturing the same exception does not prove that the lower
+  layer raises it, and letting the exception escape does not prove that the
+  orchestrator stops in its required form.
+- "Stop cleanly without propagating" means the failure path returns normally;
+  a bare return/None is valid unless the task or a supplied contract explicitly
+  requires another failure sentinel. Never apply the success-path return-value
+  contract to a handled failure path without direct evidence.
+- For newly introduced public symbols, inspect neighboring symbols and imports
+  for the repository's established naming convention. A new exception, result,
+  command, or callable whose public name contradicts a clear local convention
+  is a compatibility risk. When the task gives an exact symbol name, any other
+  spelling is blocking; otherwise report a convention mismatch as a warning
+  unless supplied repository evidence makes the expected public name concrete.
 - A blocking issue must be a concrete, localized contradiction that makes a requested deliverable incorrect or unusable, such as documentation disagreeing with an implemented command or an example's stated result contradicting its own input.
+- Redundancy, dead code, an unused import, duplicate validation, or style debt is
+  a warning unless it demonstrably changes required observable behavior. Never
+  recommend removing behavior explicitly required by the task merely to remove
+  a duplicate or unreachable branch; identify the incorrect layer instead.
 - Do not invent requirements, private APIs, formatting preferences, dependencies, or speculative edge-case behavior.
 - Treat a newly exposed command option, input mode, callable API, or public
   behavior as blocking when it has no basis in the explicit task, contract, or
@@ -79,6 +100,39 @@ file. Do not invent requirements or suggest optional hardening.
 """
 
 
+TASK_COUNTEREXAMPLE_SYSTEM = """You are the independent adversarial task auditor for a general coding agent.
+Return JSON only with blocking_issues, warnings, and summary using the same
+schema as the primary deliverable review.
+
+Try to falsify every explicit required behavior from the task by tracing the
+supplied implementation. Decompose each clause by its subject, trigger, action,
+and observable result. Do not let one end-to-end success stand in for distinct
+intermediate contracts.
+
+For multi-layer failure handling:
+- Locate the layer that directly observes the failure and verify that it
+  performs the required exception or error conversion.
+- Separately locate the caller responsible for cleanup, translation, rollback,
+  or stopping, and verify its behavior.
+- A caller manufacturing the same exception does not prove the lower layer
+  raises it. An exception escaping the caller does not prove required cleanup
+  or graceful translation.
+- Preserve adjacent pre-existing return and exception behavior unless the task
+  explicitly changes it.
+- A handled failure that must stop cleanly without propagating may return None.
+  Do not demand the normal success value on that failure path unless supplied
+  evidence explicitly requires it.
+- Inspect newly introduced public names against neighboring definitions and
+  imports. Enforce an exact task-specified name. If no exact name is specified,
+  distinguish a concrete repository convention mismatch from a merely
+  subjective naming preference.
+
+Emit only concrete contradictions against supplied editable files. Passing
+tests and generated probes are not implementation evidence. Do not invent
+requirements or implementation preferences.
+"""
+
+
 def _normalize_rel(path: Any) -> str:
     rel = str(path or "").replace("\\", "/")
     while rel.startswith("./"):
@@ -96,7 +150,7 @@ def _user_visible_changed_paths(state: dict[str, Any]) -> list[str]:
             if rel not in out:
                 out.append(rel)
     priority = {".md": 0, ".rst": 0, ".txt": 1, ".py": 2}
-    if not out and state.get("mode") in {"modify", "debug", "repair_existing"}:
+    if state.get("mode") in {"modify", "debug", "repair_existing"}:
         root = Path(str(state.get("workspace") or ".")).resolve()
         for value in (state.get("scope_contract") or {}).get("allowed_modify_paths") or []:
             rel = _normalize_rel(value)
@@ -298,6 +352,13 @@ def _valid_issue_rows(value: Any, allowed_paths: set[str], *, limit: int = 8) ->
                     "no blocking issue" in text
                     and any(marker in text for marker in ("found", "exists", "identified", "present"))
                 )
+                or re.search(
+                    r"\b(?:but|however)\b.{0,180}\b"
+                    r"(?:required\s+)?(?:phrase|behavior|check|guard|symbol|value)"
+                    r"\b.{0,100}\b(?:is|are)\s+present\b",
+                    text,
+                )
+                is not None
             )
 
         if normalized_evidence in {
@@ -358,6 +419,53 @@ def _counterexample_contract_review(
             {"role": "user", "content": prompt},
         ],
         purpose="deliverable_contract_counterexample",
+        max_tokens=1400,
+    )
+    raw = extract_json_object(text)
+    return (
+        _valid_issue_rows(raw.get("blocking_issues"), allowed_paths),
+        _valid_issue_rows(raw.get("warnings"), allowed_paths),
+        str(raw.get("summary") or "")[:1200],
+    )
+
+
+def _task_counterexample_review_needed(
+    state: dict[str, Any],
+    files: list[dict[str, Any]],
+) -> bool:
+    python_files = [row for row in files if Path(str(row.get("path") or "")).suffix == ".py"]
+    behavior_atoms = [
+        atom
+        for atom in (state.get("task_contract") or {}).get("requirement_atoms") or []
+        if isinstance(atom, dict)
+        and atom.get("required", True)
+        and str(atom.get("type") or "") == "behavior"
+    ]
+    return len(python_files) >= 2 and len(behavior_atoms) >= 2
+
+
+def _counterexample_task_review(
+    client: OpenAICompatClient,
+    *,
+    state: dict[str, Any],
+    files: list[dict[str, Any]],
+    allowed_paths: set[str],
+) -> tuple[list[dict[str, str]], list[dict[str, str]], str]:
+    prompt = (
+        f"Task:\n{state.get('task')}\n\n"
+        "Explicit task contract:\n"
+        f"{truncate(json.dumps(_review_task_contract(state), ensure_ascii=False), 7000)}\n\n"
+        "Actual change diffs:\n"
+        f"{truncate(json.dumps(_collect_patch_evidence(state), ensure_ascii=False), 10000)}\n\n"
+        "Editable implementation files, including authorized unchanged files:\n"
+        f"{truncate(json.dumps(files, ensure_ascii=False), 26000)}"
+    )
+    text = client.chat(
+        [
+            {"role": "system", "content": TASK_COUNTEREXAMPLE_SYSTEM},
+            {"role": "user", "content": prompt},
+        ],
+        purpose="deliverable_task_counterexample",
         max_tokens=1400,
     )
     raw = extract_json_object(text)
@@ -449,6 +557,19 @@ def deliverable_review_node(state: dict[str, Any]) -> dict[str, Any]:
             warnings.extend(counterexample_warnings)
             if counterexample_blocking or counterexample_warnings:
                 summary = counterexample_summary or summary
+        elif not blocking and _task_counterexample_review_needed(state, files):
+            counterexample_blocking, counterexample_warnings, counterexample_summary = (
+                _counterexample_task_review(
+                    client,
+                    state=state,
+                    files=files,
+                    allowed_paths=allowed_paths,
+                )
+            )
+            blocking = counterexample_blocking + blocking
+            warnings.extend(counterexample_warnings)
+            if counterexample_blocking or counterexample_warnings:
+                summary = counterexample_summary or summary
     except Exception as exc:
         blocking = []
         warnings = [{
@@ -511,6 +632,25 @@ def route_after_deliverable_review(state: dict[str, Any]) -> str:
             state["stopped_reason"] = "max_rounds"
             return "report"
         return "repair"
+    if (state.get("verification") or {}).get("ok") is not True:
+        atom_summary = state.get("requirement_atom_summary") or {}
+        unverified = int(atom_summary.get("required_unverified", 0) or 0)
+        state["stopped_reason"] = "verification_evidence_incomplete"
+        state["needs_verification"] = False
+        state["failure"] = {
+            "failure_type": "verification_evidence_incomplete",
+            "priority": 6,
+            "message": (
+                f"{unverified} required behavior(s) remain unverified after deliverable audit"
+                if unverified
+                else "execution verification remains unsuccessful after deliverable audit"
+            ),
+            "target_file": None,
+            "signature": "verification_evidence_incomplete",
+            "raw_excerpt": str(state.get("verification_claims") or {})[:4000],
+            "source": "route_after_deliverable_review",
+        }
+        return "report"
     state["stopped_reason"] = state.get("stopped_reason") or "verified_ok"
     state["failure"] = None
     state["needs_verification"] = False

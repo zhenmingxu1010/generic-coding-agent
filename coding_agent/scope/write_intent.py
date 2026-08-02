@@ -459,6 +459,76 @@ def _current_agent_generated_path(state: dict[str, Any], rel: str, provenance: d
     return False
 
 
+def _successfully_read_paths(state: dict[str, Any]) -> set[str]:
+    """Return project paths the agent inspected successfully in this run."""
+    out: set[str] = set()
+    for item in state.get("action_history") or []:
+        if not isinstance(item, dict) or item.get("ok") is not True:
+            continue
+        args = item.get("args") if isinstance(item.get("args"), dict) else {}
+        if item.get("tool") == "read_file":
+            rel = _norm(args.get("path"))
+            if rel:
+                out.add(rel)
+        elif item.get("tool") == "read_many_files":
+            for value in args.get("paths") or []:
+                rel = _norm(str(value))
+                if rel:
+                    out.add(rel)
+    return out
+
+
+def _source_area(path: str) -> str:
+    parts = Path(_norm(path)).parts
+    return parts[0] if len(parts) > 1 else "."
+
+
+def _allow_read_grounded_scope_expansion(
+    state: dict[str, Any],
+    scope_contract: dict[str, Any],
+    rel: str,
+) -> tuple[bool, dict[str, Any]]:
+    """Expand an LLM-proposed source scope only after bounded repository evidence.
+
+    Explicit user path boundaries remain closed. An initial semantic scope
+    inferred by the model is a hypothesis, however, and real repairs often
+    reveal a neighboring implementation file after inspection. Such an
+    expansion is limited to an existing, non-test Python file in the same
+    source area that the agent has already read successfully.
+    """
+    expanded = {
+        _norm(value)
+        for value in scope_contract.get("expanded_modify_paths") or []
+        if _norm(value)
+    }
+    if rel in expanded:
+        return True, {"scope_expansion": True, "scope_expansion_existing": True}
+    allowed = [
+        _norm(value)
+        for value in scope_contract.get("allowed_modify_paths") or []
+        if _norm(value)
+    ]
+    if (
+        scope_contract.get("semantic_write_scope_source") != "llm"
+        or not allowed
+        or _kind_from_path(rel) != "code"
+        or is_test_path(rel)
+        or rel not in _successfully_read_paths(state)
+        or _source_area(rel) not in {_source_area(value) for value in allowed}
+    ):
+        return False, {}
+
+    evidence = {
+        "path": rel,
+        "reason": "successfully read neighboring source before write",
+        "source": "runtime_read_grounded_scope_expansion",
+        "allowed_source_area": _source_area(rel),
+    }
+    scope_contract.setdefault("expanded_modify_paths", []).append(rel)
+    state.setdefault("scope_expansions", []).append(evidence)
+    return True, {"scope_expansion": True, "scope_expansion_evidence": evidence}
+
+
 def can_execute_write_intent(state: dict[str, Any], path: str, *, exists: bool) -> tuple[bool, str, dict[str, Any]]:
     rel = _norm(path)
     intent = intent_for_path(state, rel)
@@ -499,6 +569,40 @@ def can_execute_write_intent(state: dict[str, Any], path: str, *, exists: bool) 
             "origin": origin,
             "provenance": prov,
             "protected_by_scope": True,
+        }
+    allowed_modify_paths = {
+        _norm(value)
+        for value in scope_contract.get("allowed_modify_paths") or []
+        if _norm(value)
+    }
+    if exists and allowed_modify_paths and rel not in allowed_modify_paths:
+        expansion_allowed, expansion_detail = _allow_read_grounded_scope_expansion(
+            state,
+            scope_contract,
+            rel,
+        )
+        if not expansion_allowed:
+            return False, "existing source path is outside the allowed modification scope", {
+                "write_intent": intent,
+                "origin": origin,
+                "provenance": prov,
+                "outside_allowed_modify_scope": True,
+                "allowed_modify_paths": sorted(allowed_modify_paths),
+                "approval_required": False,
+            }
+        if intent and not intent.get("allowed"):
+            return False, intent.get("reason", "write_intent denies this write"), {
+                "write_intent": intent,
+                "origin": origin,
+                "provenance": prov,
+                **expansion_detail,
+                "approval_required": intent.get("operation") == "approval_required",
+            }
+        return True, "read-grounded neighboring source scope expansion allowed", {
+            "write_intent": intent,
+            "origin": origin,
+            "provenance": prov,
+            **expansion_detail,
         }
     if intent:
         if intent.get("allowed"):

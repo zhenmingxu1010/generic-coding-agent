@@ -127,6 +127,44 @@ def test_file_plan_accepts_direct_shell_script_with_sandbox_fixture(tmp_path: Pa
     assert steps[0]["command"] == ["sh", "count.sh", "input.txt"]
 
 
+def test_file_plan_rejects_python_probe_missing_local_function_argument(
+    tmp_path: Path,
+):
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "pkg" / "hooks.py").write_text(
+        "def run_hook(name, project_dir, context):\n"
+        "    return 0\n",
+        encoding="utf-8",
+    )
+    description = "run_hook raises the requested error for a failed hook."
+    state = _state(tmp_path, "requirement:hook", description)
+
+    steps = _sanitize_verify_steps(state, [{
+        "name": "bad_probe",
+        "command": ["python", "probe.py"],
+        "verifies": ["requirement:hook"],
+        **_grounding("requirement:hook", description),
+        "sandbox": {
+            "copy_paths": ["pkg"],
+            "files": [{
+                "path": "probe.py",
+                "content": (
+                    "from pkg.hooks import run_hook\n"
+                    "run_hook('pre_gen_project', '/tmp/project')\n"
+                ),
+            }],
+        },
+    }])
+
+    assert steps == []
+    rejected = state["skipped_file_plan_verify_steps"][-1]
+    assert rejected["reason"] == (
+        "verification probe calls a local function with missing required arguments"
+    )
+    assert rejected["signature_issues"][0]["missing_arguments"] == ["context"]
+
+
 def test_file_plan_normalizes_declared_sandbox_fixture_reference(tmp_path: Path):
     description = "The tool accepts input.data and produces an observable result."
     state = _state(tmp_path, "requirement:behavior", description)
@@ -273,6 +311,78 @@ def test_file_plan_accepts_public_option_supported_by_repository_evidence(tmp_pa
 
     assert [step["name"] for step in steps] == ["documented_mode"]
     assert steps[0]["grounding"]["status"] == "accepted"
+
+
+def test_file_plan_treats_pytest_flags_as_runner_options(tmp_path: Path):
+    description = "The failed-hook behavior must pass its existing regression test."
+    state = _state(tmp_path, "requirement:behavior", description)
+
+    steps = _sanitize_verify_steps(state, [{
+        "name": "failed_hook_regression",
+        "command": ["python", "-m", "pytest", "-x", "-v", "tests/test_hooks.py"],
+        "verifies": ["requirement:behavior"],
+        **_grounding("requirement:behavior", description),
+    }])
+
+    assert [step["name"] for step in steps] == ["failed_hook_regression"]
+    assert steps[0]["grounding"]["status"] == "accepted"
+
+
+def test_file_plan_accepts_exact_previously_collected_pytest_selector(tmp_path: Path):
+    description = "The failed-hook behavior must pass its existing regression test."
+    state = _state(tmp_path, "requirement:behavior", description)
+    state["verification"] = {
+        "test_results": {
+            "runs": [{
+                "testcases": [{
+                    "test": "tests.test_hooks::TestHooks::test_failure",
+                }]
+            }]
+        }
+    }
+
+    steps = _sanitize_verify_steps(state, [{
+        "name": "failed_hook_regression",
+        "command": [
+            "pytest",
+            "-x",
+            "tests/test_hooks.py::TestHooks::test_failure",
+        ],
+        "verifies": ["requirement:behavior"],
+        **_grounding("requirement:behavior", description),
+    }])
+
+    assert [step["name"] for step in steps] == ["failed_hook_regression"]
+
+
+def test_file_plan_rejects_invented_pytest_node_selector(tmp_path: Path):
+    description = "The failed-hook behavior must be verified."
+    state = _state(tmp_path, "requirement:behavior", description)
+    state["verification"] = {
+        "test_results": {
+            "runs": [{
+                "testcases": [{
+                    "test": "tests.test_hooks::TestHooks::test_success",
+                }]
+            }]
+        }
+    }
+
+    steps = _sanitize_verify_steps(state, [{
+        "name": "invented_selector",
+        "command": [
+            "pytest",
+            "tests/test_hooks.py::TestHooks::test_failure_that_does_not_exist",
+        ],
+        "verifies": ["requirement:behavior"],
+        **_grounding("requirement:behavior", description),
+    }])
+
+    assert steps == []
+    grounding = state["skipped_file_plan_verify_steps"][-1]["grounding"]
+    assert grounding["unsupported_test_selectors"] == [
+        "tests/test_hooks.py::TestHooks::test_failure_that_does_not_exist"
+    ]
 
 
 def test_file_plan_rejects_uncited_test_source_as_application_input(tmp_path: Path):
