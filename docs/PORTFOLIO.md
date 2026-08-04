@@ -18,7 +18,7 @@
   acceptance from Agent success claims and reports final-gate precision,
   protected mutations, modification scope, latency, calls, and token usage.
 
-Current public evidence: 536 offline tests, 11/11 model-backed scenario
+Current public evidence: 574 offline tests, 11/11 model-backed scenario
 validators, and 4/4 externally accepted historical repairs, including one
 three-file change. The Agent claimed success in 3/4 cases and conservatively
 rejected the accepted multi-file repair because direct verification evidence

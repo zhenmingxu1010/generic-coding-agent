@@ -6,13 +6,14 @@ model will behave identically.
 
 ## Environment
 
-- Date: 2026-07-23
+- Offline release-gate rerun: 2026-08-02
+- Model-backed evidence run: 2026-07-23
 - Platform: macOS arm64
 - Python: 3.12
 - Model protocol: OpenAI-compatible chat completions
 - Model used for live checks: `deepseek-v4-flash`
 - API connectivity check: passed
-- Offline suite: 536 passed
+- Offline suite: 574 passed
 - Distribution build: wheel and source distribution passed
 - Built-wheel smoke check: package imports and CLI help passed
 - Local release gate: source scan, compile, pytest, build, distribution
@@ -21,6 +22,65 @@ model will behave identically.
 No endpoint credential is stored in this repository. Provider selection is
 reported only to make the result reproducible; core behavior remains provider
 neutral.
+
+The 2026-08-02 security-hardening rerun also repeated the two model-backed
+paths affected by the policy change. T11 completed as read-only analysis with
+zero source changes and no project execution tool call. T05 explicitly entered
+verify-only mode, executed pytest, reported `pytest_zero_tests_collected`, and
+made zero source changes. Both per-case validators passed. This was a focused
+two-case rerun, not a new full eleven-case matrix run; the full matrix evidence
+below remains the recorded 2026-07-23 bundle.
+
+## Focused robustness probes
+
+Two additional disposable projects were exercised on 2026-08-02 with external
+acceptance code kept outside the target workspaces:
+
+- A greenfield installable Python CLI produced ten project files and 52 passing
+  project tests. External acceptance built its wheel, installed it into an
+  independent virtual environment, exercised both `python -m` and the PEP 621
+  console command, and passed seven hidden behavior checks covering standard
+  CSV quoting, repeated categories, empty input, invalid values, and headers.
+- A seeded multi-file repair began with four failing project tests. The Agent
+  changed only the parser and aggregator, reported `verified_ok`, preserved the
+  project tests, and passed six hidden checks including one-shot iterables,
+  physical line numbers, invalid names, and malformed records.
+
+The greenfield implementation initially exposed a conservative false negative:
+the generated console command was not installed in the Agent environment and
+was correctly rejected as an unknown executable. The runtime was changed
+generically to adapt only commands declared in the current project's standard
+`[project.scripts]` table. Reverification then executed all five planned steps,
+passed all 24 required atoms, and produced a clean `verified_ok` final gate.
+No fixture or project name was added to the core runtime.
+
+## Prompt-detail and project-size matrix
+
+A second disposable matrix on 2026-08-02 covered small repair, medium
+greenfield, and larger installable-CLI work with both concise and detailed
+prompts. Acceptance programs were kept outside the generated workspaces.
+
+- Both small parser repairs reached `verified_ok`; the concise contract passed
+  11 hidden checks and the detailed contract passed 15. Duplicate units,
+  ordering, and non-string error semantics were enforced only for the detailed
+  prompt because the concise prompt did not specify them.
+- Both medium text-processing projects reached `verified_ok` after feedback
+  repairs and passed 10 hidden checks each, including wheel build and install
+  in independent virtual environments.
+- The concise large project initially exposed repair-target locking and
+  speculative-scope defects. After generic runtime fixes, a fresh repair run
+  reached `verified_ok` in seven tool rounds, passed all eight requirement
+  atoms, built and installed its wheel, and passed 14 hidden checks.
+- The detailed large project passed 45 project tests and 14 hidden checks. A
+  repair audit found no implementation change was needed; the final gate now
+  accepts that no-op only because direct execution evidence passes every
+  required atom.
+
+The matrix also exposed and fixed an unbounded artifact-evidence verification
+loop (175 repeated verification entries before the run was manually stopped),
+checkpoint flags omitted from persistent graph state, an offline fallback that
+misclassified repair as verify-only, and module-entry status propagation. The
+core package contains no names or branches for any matrix fixture.
 
 ## Real-repository repair pilot
 

@@ -7,6 +7,7 @@ import symtable
 from typing import Any
 
 from coding_agent.workspace.run_paths import is_test_like_path
+from coding_agent.safety.path_guard import PathGuard, is_within_workspace
 
 def _is_test_path(rel: str) -> bool:
     return is_test_like_path(rel)
@@ -16,6 +17,8 @@ def _py_files(workspace: str, state: dict[str, Any] | None = None) -> list[str]:
     root = Path(workspace).resolve()
     out: list[str] = []
     for p in root.rglob("*.py"):
+        if not is_within_workspace(root, p):
+            continue
         rel = str(p.relative_to(root)).replace("\\", "/")
         if "__pycache__" in rel:
             continue
@@ -27,7 +30,7 @@ def _py_files(workspace: str, state: dict[str, Any] | None = None) -> list[str]:
 
 def _read_ast(workspace: str, rel: str) -> ast.AST | None:
     try:
-        text = (Path(workspace) / rel).read_text(encoding="utf-8", errors="replace")
+        text = PathGuard(workspace).resolve(rel).read_text(encoding="utf-8", errors="replace")
         return ast.parse(text, filename=rel)
     except Exception:
         return None
@@ -114,6 +117,8 @@ def _undefined_global_issues(workspace: str, state: dict[str, Any]) -> list[dict
     for rel in _changed_python_sources(state):
         path = root / rel
         try:
+            if not is_within_workspace(root, path):
+                continue
             source = path.read_text(encoding="utf-8", errors="replace")
             tree = ast.parse(source, filename=rel)
             table = symtable.symtable(source, rel, "exec")

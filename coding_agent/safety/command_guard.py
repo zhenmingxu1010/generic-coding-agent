@@ -24,7 +24,7 @@ class CommandPolicy:
         "python", "pytest", "sh", "bash", "grep", "find", "ls", "cat", "sed", "head", "tail", "wc", "git"
     })
     read_only_allow: set[str] = field(default_factory=lambda: {
-        "python", "pytest", "sh", "bash", "grep", "find", "ls", "cat", "sed", "head", "tail", "wc", "git"
+        "grep", "ls", "cat", "head", "tail", "wc", "git"
     })
     blocked_patterns: list[str] = field(default_factory=lambda: [
         "rm -rf /", "rm -rf", ":(){ :|:& };:", "mkfs", "shutdown", "reboot", "dd if=", "curl | sh", "wget | sh", "> /", "sudo"
@@ -46,8 +46,6 @@ class CommandGuard:
                 continue
             candidate = Path(value)
             if not candidate.is_absolute():
-                if ".." not in candidate.parts:
-                    continue
                 candidate = self.workspace / candidate
             try:
                 resolved = candidate.resolve()
@@ -64,6 +62,24 @@ class CommandGuard:
         allowed = {"status", "diff", "log", "show", "ls-files", "rev-parse"}
         if subcommand not in allowed:
             raise ValueError(f"Git subcommand is not read-only/allowed: {subcommand or '<missing>'}")
+        if any(part == "--output" or part.startswith("--output=") for part in parts[1:]):
+            raise ValueError("Git --output is not allowed through run_shell")
+
+    @staticmethod
+    def _check_find(parts: list[str]) -> None:
+        if canonical_executable(parts[0]) != "find":
+            return
+        actions = {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls"}
+        blocked = next((part for part in parts[1:] if part.lower() in actions), None)
+        if blocked:
+            raise ValueError(f"find action may execute or write and is not allowed: {blocked}")
+
+    @staticmethod
+    def _check_sed(parts: list[str]) -> None:
+        if canonical_executable(parts[0]) != "sed":
+            return
+        if any(part == "--in-place" or part.startswith("--in-place=") or re.fullmatch(r"-i.*", part) for part in parts[1:]):
+            raise ValueError("sed in-place editing is not allowed through run_shell; use edit_file")
 
     def check(self, command: list[str] | str) -> list[str]:
         if isinstance(command, str):
@@ -91,5 +107,7 @@ class CommandGuard:
             if script.suffix.lower() not in {".sh", ".bash"}:
                 raise ValueError("Shell interpreters may only run a .sh or .bash workspace script directly")
         self._check_git(parts)
+        self._check_find(parts)
+        self._check_sed(parts)
         self._check_paths(parts)
         return parts

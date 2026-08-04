@@ -154,6 +154,93 @@ def test_behavior_failure_keeps_authorized_scope_and_drops_invented_target(tmp_p
     ]
 
 
+def test_repository_discoverable_repair_keeps_traceback_target_over_llm_guess(tmp_path: Path):
+    state = _base_state(tmp_path)
+    (tmp_path / "package").mkdir()
+    (tmp_path / "package" / "storage.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "metadata.toml").write_text("[project]\n", encoding="utf-8")
+    state.update({
+        "mode": "debug",
+        "task": "Inspect and repair the existing project implementation.",
+        "task_intent": {"source_modify_intent": True},
+        "task_completeness": {"target_clarity": "repository_discoverable"},
+        "scope_contract": {
+            "allowed_modify_paths": ["metadata.toml"],
+            "semantic_write_scope_source": "llm",
+        },
+        "failure": {"failure_type": "runtime_error", "signature": "runtime-target"},
+        "failure_issues": [{
+            "owner": "implementation",
+            "type": "attributeerror",
+            "file": "package/storage.py",
+            "target_file": "package/storage.py",
+            "message": "runtime traceback points to the implementation",
+        }],
+    })
+
+    controller = build_repair_controller(state)
+
+    assert controller["target_files"] == ["package/storage.py"]
+
+
+def test_safe_create_unlocalized_failure_keeps_generated_code_batch(tmp_path: Path):
+    state = _base_state(tmp_path)
+    state["file_plan"]["files"].extend([
+        {"path": "package/__main__.py", "kind": "code"},
+        {"path": "package/cli.py", "kind": "code"},
+    ])
+    state["generated_files"].extend([
+        {"path": "package/__main__.py", "kind": "code"},
+        {"path": "package/cli.py", "kind": "code"},
+    ])
+    state["failure"] = {"failure_type": "contract_error", "signature": "safe-create-runtime"}
+    state["failure_issues"] = [{
+        "owner": "implementation",
+        "type": "contract_failure",
+        "message": "a public subprocess reported the wrong exit status",
+    }]
+
+    controller = build_repair_controller(state)
+
+    assert controller["target_files"] == [
+        "scripts/tool.py",
+        "package/__main__.py",
+        "package/cli.py",
+    ]
+
+
+def test_safe_create_localized_failure_allows_adjacent_generated_owner(tmp_path: Path):
+    state = _base_state(tmp_path)
+    state["task_intent"] = {"operation_mode": "safe_create"}
+    state["file_plan"]["files"].extend([
+        {"path": "package/storage.py", "kind": "code"},
+        {"path": "package/models.py", "kind": "code"},
+    ])
+    state["generated_files"].extend([
+        {"path": "package/storage.py", "kind": "code"},
+        {"path": "package/models.py", "kind": "code"},
+    ])
+    state["failure"] = {"failure_type": "runtime_error", "signature": "safe-create-localized"}
+    state["failure_issues"] = [{
+        "owner": "implementation",
+        "type": "attributeerror",
+        "file": "package/storage.py",
+        "target_file": "package/storage.py",
+        "message": "a generated dependency does not expose the called attribute",
+    }]
+
+    controller = build_repair_controller(state)
+    force = force_action_from_controller(controller)
+
+    assert controller["target_files"] == [
+        "package/storage.py",
+        "scripts/tool.py",
+        "package/models.py",
+    ]
+    assert force is not None
+    assert "package/models.py" in force["allowed_target_files"]
+
+
 def test_generated_test_decision_cannot_target_project_code(tmp_path: Path):
     state = _base_state(tmp_path)
     state["failure"] = {"failure_type": "test_failure", "signature": "sig"}

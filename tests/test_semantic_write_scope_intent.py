@@ -42,6 +42,23 @@ def test_llm_semantic_source_modify_allows_project_change_without_literal_permis
     assert "src/calculator.py" in intent["allowed_modify_paths"]
 
 
+def test_empty_semantic_scope_falls_back_to_repair_intent():
+    intent = classify_task_intent(
+        "Inspect and repair this existing implementation, then run its tests.",
+        {
+            "task_type": "modify_code",
+            "read_only": False,
+            "write_scope_intent": {},
+        },
+    )
+
+    assert intent["intent_source"] == "heuristic_fallback"
+    assert intent["operation_mode"] == "scoped_modify"
+    assert intent["mode"] == "debug"
+    assert intent["source_modify_intent"] is True
+    assert intent["agent_read_only"] is False
+
+
 def test_llm_semantic_safe_create_blocks_source_modify():
     task = "Produce a separate report script for this repository without changing existing project files."
     intent = classify_task_intent(

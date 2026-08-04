@@ -99,6 +99,29 @@ def _verified_without_implementation_change(state: dict[str, Any], atom_summary:
             continue
         if step.get("verifies"):
             return True
+    # Existing project suites can provide direct requirement evidence through
+    # their named passing test cases even when the runtime-added pytest command
+    # is an infrastructure step with no explicit `verifies` binding.
+    successful_results = {
+        str(result.get("name") or "")
+        for result in verification.get("results") or []
+        if isinstance(result, dict)
+        and result.get("executed", True)
+        and int(result.get("returncode", 1) or 0) == 0
+        and not result.get("timed_out")
+    }
+    check = authoritative_requirement_atom_check(state)
+    for atom in check.get("atoms") or []:
+        if not isinstance(atom, dict) or atom.get("status") != "passed":
+            continue
+        data = atom.get("data") if isinstance(atom.get("data"), dict) else {}
+        if str(data.get("evidence_mode") or "") != "execution":
+            continue
+        if str(atom.get("source") or "") == "agent_implementation_default":
+            continue
+        claim = (atom.get("details") or {}).get("verification_claim") or {}
+        if successful_results.intersection(str(name) for name in claim.get("cited_steps") or []):
+            return True
     return False
 
 

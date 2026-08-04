@@ -508,19 +508,28 @@ def _allow_read_grounded_scope_expansion(
         for value in scope_contract.get("allowed_modify_paths") or []
         if _norm(value)
     ]
+    mentioned = {_norm(path) for path in extract_mentioned_paths(str(state.get("task") or ""))}
+    broad_repository_repair = bool(
+        (state.get("task_intent") or {}).get("source_modify_intent")
+        and str((state.get("task_completeness") or {}).get("target_clarity") or "") == "repository_discoverable"
+        and not set(allowed).intersection(mentioned)
+    )
     if (
         scope_contract.get("semantic_write_scope_source") != "llm"
         or not allowed
         or _kind_from_path(rel) != "code"
         or is_test_path(rel)
         or rel not in _successfully_read_paths(state)
-        or _source_area(rel) not in {_source_area(value) for value in allowed}
+        or (
+            not broad_repository_repair
+            and _source_area(rel) not in {_source_area(value) for value in allowed}
+        )
     ):
         return False, {}
 
     evidence = {
         "path": rel,
-        "reason": "successfully read neighboring source before write",
+        "reason": "successfully read source before write under repository-discoverable repair scope",
         "source": "runtime_read_grounded_scope_expansion",
         "allowed_source_area": _source_area(rel),
     }

@@ -9,6 +9,7 @@ from coding_agent.core.llm_client import LLMTimeoutError, OpenAICompatClient
 from coding_agent.core.utils import extract_json_object, truncate
 from coding_agent.scope.write_scope import extract_mentioned_paths, normalize_rel
 from coding_agent.scope.write_scope_audit import build_write_scope_audit
+from coding_agent.safety.path_guard import is_within_workspace
 from coding_agent.verification.plan_grounding import compact_grounding_source_catalog
 
 
@@ -158,6 +159,8 @@ Rules:
 - For evidence_mode=runtime, passed requires an exact cited runtime evidence
   source. Runtime facts are authoritative for write scope, generated artifact
   placement, and other agent-observed constraints.
+- For evidence_mode=artifact, passed requires an exact cited runtime artifact
+  preview and the preview must directly establish the stated constraint.
 - failed means executed evidence contradicts the requirement.
 - unverified means evidence is absent or insufficient.
 - Do not judge implementation style unless the requirement explicitly asks for it.
@@ -182,9 +185,58 @@ def _evidence_mode(atom: dict[str, Any]) -> str:
     return "runtime" if str(atom.get("type") or "") == "constraint" else "execution"
 
 
+def _artifact_requirement_file_previews(
+    state: dict[str, Any],
+    *,
+    max_files: int = 8,
+    max_total_chars: int = 16000,
+) -> dict[str, dict[str, Any]]:
+    """Read bounded current-run files explicitly named by artifact constraints."""
+    atoms = [atom for atom in _dynamic_atoms(state) if _evidence_mode(atom) == "artifact"]
+    if not atoms:
+        return {}
+    requirement_text = "\n".join(
+        " ".join([
+            str(atom.get("description") or ""),
+            str(atom.get("verify_hint") or ""),
+            " ".join(str(value) for value in atom.get("evidence") or []),
+        ])
+        for atom in atoms
+    ).lower()
+    root = Path(str(state.get("workspace") or ".")).resolve()
+    out: dict[str, dict[str, Any]] = {}
+    used = 0
+    for item in state.get("generated_files") or []:
+        if not isinstance(item, dict) or item.get("ok") is False:
+            continue
+        rel = normalize_rel(str(item.get("path") or ""))
+        if not rel or (rel.lower() not in requirement_text and Path(rel).name.lower() not in requirement_text):
+            continue
+        try:
+            path = (root / rel).resolve()
+            if not is_within_workspace(root, path) or not path.is_file():
+                continue
+            content = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        remaining = max_total_chars - used
+        if remaining <= 0:
+            break
+        preview = content[: min(4000, remaining)]
+        out[rel] = {
+            "content": preview,
+            "truncated": len(preview) < len(content),
+            "size_chars": len(content),
+        }
+        used += len(preview)
+        if len(out) >= max_files:
+            break
+    return out
+
+
 def build_runtime_evidence(state: dict[str, Any]) -> dict[str, Any]:
     """Expose generic facts already observed by the runtime to the reviewer."""
-    return {
+    evidence = {
         "runtime:write_scope_audit": build_write_scope_audit(state),
         "runtime:generated_files": state.get("generated_files") or [],
         "runtime:changed_files": state.get("changed_files") or [],
@@ -192,6 +244,10 @@ def build_runtime_evidence(state: dict[str, Any]) -> dict[str, Any]:
         "runtime:test_registry": state.get("verification_test_registry") or {},
         "runtime:scope_contract": state.get("scope_contract") or {},
     }
+    artifact_previews = _artifact_requirement_file_previews(state)
+    if artifact_previews:
+        evidence["runtime:artifact_requirement_files"] = artifact_previews
+    return evidence
 
 
 def _covered_ids(steps: list[dict[str, Any]]) -> set[str]:
@@ -223,6 +279,36 @@ def _test_evidence_tokens(value: Any) -> set[str]:
     return tokens
 
 
+def _is_public_cli_command(state: dict[str, Any], step: dict[str, Any]) -> bool:
+    """Recognize a public CLI path without treating verifier probes as CLIs."""
+    command = [str(part) for part in step.get("command") or []]
+    if not command:
+        return False
+    executable = Path(command[0]).name.lower()
+    python_names = {"python", "python.exe", "python3", "python3.exe"}
+    if executable in python_names:
+        if len(command) > 2 and command[1] == "-m":
+            module = command[2].lower()
+            return module not in {"build", "compileall", "pip", "pytest", "unittest"}
+        if len(command) > 1 and command[1].lower().endswith(".py"):
+            sandbox_files = {
+                str(item.get("path") or "").replace("\\", "/")
+                for item in ((step.get("sandbox") or {}).get("files") or [])
+                if isinstance(item, dict)
+            }
+            return command[1].replace("\\", "/") not in sandbox_files
+        return False
+    if executable in {"coverage", "mypy", "pyright", "pytest", "ruff", "tox", "uv"}:
+        return False
+    try:
+        from coding_agent.verification.console_entry import load_pep621_console_scripts
+
+        declared = load_pep621_console_scripts(str(state.get("workspace") or "."))
+    except (OSError, ValueError):
+        declared = {}
+    return command[0] in declared or executable.removesuffix(".exe") in declared
+
+
 def _all_tests_requirement(atom: dict[str, Any]) -> bool:
     if _contract_reference_paths(atom):
         return False
@@ -232,7 +318,12 @@ def _all_tests_requirement(atom: dict[str, Any]) -> bool:
     ])
     low = text.lower()
     mentions_tests = "test" in low or "测试" in text
-    mentions_all = "all" in low or "全部" in text or "所有" in text
+    mentions_all = (
+        "all" in low
+        or bool(re.search(r"\b(?:full|entire|complete)\s+(?:project\s+)?test\s+suite\b", low))
+        or "全部" in text
+        or "所有" in text
+    )
     mentions_pass = "pass" in low or "通过" in text
     return mentions_tests and mentions_all and mentions_pass
 
@@ -357,11 +448,19 @@ def _pytest_requirement_evidence(state: dict[str, Any], atoms: list[dict[str, An
         atom_tokens = _test_evidence_tokens(
             " ".join(str(atom.get(key) or "") for key in ("description", "verify_hint"))
         )
-        matched = [
-            case
+        overlaps = {
+            case: atom_tokens.intersection(tokens - common_tokens)
             for case, tokens in case_tokens.items()
-            if len(atom_tokens.intersection(tokens - common_tokens)) >= 2
-        ]
+        }
+        matched = [case for case, overlap in overlaps.items() if len(overlap) >= 2]
+        if not matched:
+            # Composite requirements are often covered by separate, clearly
+            # named boundary tests. Permit those names to corroborate each
+            # other while still rejecting a lone generic one-token match.
+            partial = [case for case, overlap in overlaps.items() if overlap]
+            covered = set().union(*(overlaps[case] for case in partial)) if partial else set()
+            if len(partial) >= 2 and len(covered) >= 2:
+                matched = partial
         if matched:
             evidence[atom_id] = {
                 "matched_testcases": matched[:20],
@@ -832,7 +931,10 @@ def collect_verification_artifacts(state: dict[str, Any], max_files: int = 20) -
             return True
         return len(parts) >= 4 and parts[2] == ".verification"
 
-    files = [p for p in root.rglob("*") if p.is_file() and is_output(p)]
+    files = [
+        p for p in root.rglob("*")
+        if p.is_file() and is_within_workspace(root, p) and is_output(p)
+    ]
     for path in sorted(files)[:max_files]:
         try:
             raw = path.read_bytes()
@@ -969,7 +1071,7 @@ def review_behavior_evidence(
                         successful_steps = []
                 if not successful_steps:
                     status = "unverified"
-            elif evidence_mode == "runtime" and not valid_runtime:
+            elif evidence_mode in {"runtime", "artifact"} and not valid_runtime:
                 status = "unverified"
         if status == "failed" and not valid_steps and not valid_runtime:
             status = "unverified"
@@ -1056,41 +1158,29 @@ def review_behavior_evidence(
                     "reason": "the agent-default execution gate is satisfied by grounded task behavior evidence",
                 }
 
-    # A generic CLI usability default may be proven by an accepted usage/help
-    # invocation even when the planner bound that step only to the user's
-    # positional-argument requirement.
-    usage_steps: list[str] = []
+    # A generic CLI usability default may be proven by a successful accepted
+    # public CLI invocation even when the planner bound that step only to the
+    # user's functional requirement.
+    cli_steps: list[str] = []
     for step in trusted_steps:
         name = str(step.get("name") or "")
         result = result_by_name.get(name) or {}
-        command_text = " ".join(str(part) for part in step.get("command") or [])
-        observed = "\n".join([
-            str(step.get("expected") or ""),
-            str(result.get("stdout") or ""),
-            str(result.get("stderr") or ""),
-        ]).lower()
-        exposes_usage = (
-            "--help" in command_text
-            or " -h" in f" {command_text}"
-            or "usage" in observed
-            or "用法" in observed
-        )
         if (
-            exposes_usage
+            _is_public_cli_command(state, step)
             and (step.get("grounding") or {}).get("status") == "accepted"
             and result.get("executed", True)
             and int(result.get("returncode", 1) or 0) == 0
             and not result.get("timed_out")
         ):
-            usage_steps.append(name)
+            cli_steps.append(name)
     usable_cli = claims.get("implementation:usable_cli_invocation") or {}
-    if usage_steps and usable_cli.get("status") == "unverified":
+    if cli_steps and usable_cli.get("status") == "unverified":
         claims["implementation:usable_cli_invocation"] = {
             "atom_id": "implementation:usable_cli_invocation",
             "status": "passed",
-            "cited_steps": usage_steps[:2],
+            "cited_steps": cli_steps[:2],
             "cited_runtime": [],
-            "evidence": ["accepted CLI invocation exposed observable usage guidance"],
-            "reason": "the agent-default CLI usability gate is satisfied by an observed usage path",
+            "evidence": ["accepted public CLI invocation completed successfully"],
+            "reason": "the agent-default CLI usability gate is satisfied by an observed public execution path",
         }
     return claims

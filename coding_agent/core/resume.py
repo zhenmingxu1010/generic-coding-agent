@@ -38,6 +38,21 @@ def prepare_resumed_state(
     for key in _TERMINAL_FIELDS:
         state.pop(key, None)
 
+    verification = state.get("verification") or {}
+    if previous_stop and verification and verification.get("ok") is not True and not state.get("failure"):
+        # A terminal evidence-only stop has no implementation failure to route
+        # into repair. Reopen the existing, unchanged contract at verification
+        # instead of falling through to planning/acting again.
+        state["needs_verification"] = True
+        state["verification_reason"] = "resume terminal verification with the preserved task contract"
+        state["verification_plan_attempts"] = 0
+        for key in (
+            "verification_stalled",
+            "verification_failure_repeat_count",
+            "verification_failure_fingerprint",
+        ):
+            state.pop(key, None)
+
     answer = str(clarification_answer or "").strip()
     if answer:
         if previous_stop != "clarification_required":

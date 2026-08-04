@@ -128,7 +128,7 @@ def test_run_tests_tool_exec_records_verification_result_with_atom_status(tmp_pa
 
     old_execute_tool = tool_exec_mod.execute_tool
 
-    def fake_execute_tool(workspace, tool, args, read_only=False):
+    def fake_execute_tool(workspace, tool, args, read_only=False, allow_read_only_execution=False):
         return ToolResult(
             tool="run_tests",
             ok=True,

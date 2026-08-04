@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from coding_agent.safety.path_guard import is_within_workspace
 from coding_agent.verification.test_registry import registered_test_paths
 from coding_agent.contracts.requirement_atoms import extract_requirement_atoms, summarize_requirement_atoms
 from coding_agent.contracts.artifact_constraints import detect_prohibited_artifacts, tests_creation_prohibited, is_test_artifact_path
@@ -130,6 +131,8 @@ def scan_workspace_contract(workspace: str, state: dict[str, Any] | None = None)
     root = Path(workspace).resolve()
     py_files = []
     for p in root.rglob("*.py"):
+        if not is_within_workspace(root, p):
+            continue
         rel = str(p.relative_to(root)).replace("\\", "/")
         if _include_file(rel, p.parts, state):
             py_files.append(rel)

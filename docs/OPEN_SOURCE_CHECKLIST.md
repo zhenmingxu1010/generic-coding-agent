@@ -39,3 +39,13 @@
 - [x] Add a roadmap with issues suitable for external contributors.
 - [x] Add a reproducible three-minute demo path and portfolio/interview notes.
 - [x] Confirm package install/import/CLI startup in a temporary wheel environment.
+
+## Current `main` hardening
+
+- [x] Pass 574 offline tests after workspace-boundary, read-only execution, and
+  PEP 621 console-entry verification
+  hardening on 2026-08-02.
+- [x] Reject external-target symlinks across search, repository mapping,
+  interface checks, verification discovery, and workspace baselines.
+- [x] Keep explicit verify-only execution separate from read-only analysis and
+  from source-write authorization.

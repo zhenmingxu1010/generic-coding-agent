@@ -25,10 +25,12 @@ All notable changes to this project are documented here. The format follows
 - Project deep dive, Agent interview guide, demo guide, completion criteria,
   and portfolio notes.
 - Accessible terminal-demo transcript and animated validation summary.
+- A runtime-owned PEP 621 console-entry verification adapter for generated
+  Python CLI projects, while undeclared executable names remain blocked.
 
 ### Changed
 
-- Public documentation now reflects the released repository, 536-test local
+- Public documentation now reflects the released repository, 574-test local
   gate, successful public CI, published Alpha tag, and measured pilot cost.
 - Colloquial Chinese create, repair, modify, and inspection intent coverage.
 - The provider-neutral capability matrix now includes eleven scenarios,
@@ -42,11 +44,32 @@ All notable changes to this project are documented here. The format follows
   even when an oracle reviewer notices that the current code cannot pass them.
 - Traceback paths inside the workspace are normalized before repair target
   locking, and streamed model responses now obey a total wall-clock deadline.
+- Repair routing now keeps adjacent current-run modules for greenfield defects,
+  permits read-grounded runtime targets when a broad repository repair was
+  initially narrowed to speculative paths, and accepts execution-proved no-op
+  repairs when the existing implementation already satisfies its contract.
+- Resume routing preserves checkpoint markers in graph state, empty semantic
+  scope objects no longer become read-only decisions, and non-execution
+  evidence gaps cannot form an unbounded verification loop.
+- Artifact constraints receive bounded previews of explicitly named generated
+  files, while composite named tests and successful public CLI paths can
+  provide requirement evidence without task-specific runtime rules.
 - The release gate proves wheel imports originate from an isolated temporary
   installation instead of being shadowed by the source checkout.
 - The real-repository pilot now includes an externally accepted three-file
   Cookiecutter repair and reports its conservative Agent final-gate false
   negative instead of conflating external acceptance with self-reported success.
+
+### Security
+
+- Workspace scans, text search, interface checks, verification discovery, and
+  baselines now ignore symbolic links whose resolved targets leave the
+  authorized workspace.
+- Read-only analysis blocks project shell and test execution by default;
+  explicit verify-only mode can execute checks without enabling write tools.
+- Command validation rejects indirect write/execution forms such as
+  `find -exec`, `find -delete`, `sed -i`, and Git `--output`, and resolves all
+  command path arguments before execution.
 
 ### Planned
 

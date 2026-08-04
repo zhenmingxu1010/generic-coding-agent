@@ -8,6 +8,7 @@ from typing import Any
 
 from coding_agent.core.utils import sha16
 from coding_agent.workspace.run_paths import project_memory_dir_for
+from coding_agent.safety.path_guard import is_within_workspace
 
 SKIP_DIRS = {
     ".coding_agent",
@@ -51,9 +52,14 @@ def _scan_workspace(workspace: str | Path) -> dict[str, Any]:
     root = Path(workspace).resolve()
     files: dict[str, Any] = {}
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        dirnames[:] = [
+            d for d in dirnames
+            if d not in SKIP_DIRS and is_within_workspace(root, Path(dirpath) / d)
+        ]
         for name in filenames:
             p = Path(dirpath) / name
+            if not is_within_workspace(root, p):
+                continue
             try:
                 rel = _norm(str(p.relative_to(root)))
                 st = p.stat()

@@ -65,6 +65,17 @@ def is_greenfield_write_task(state: AgentState) -> bool:
     return state.get("mode") in {"write", "generate_project"} and not bool(state.get("read_only"))
 
 
+def route_from_start(state: AgentState) -> str:
+    """Resume an established contract without asking intake to redefine it."""
+    if (
+        state.get("resumed_from_checkpoint")
+        and state.get("task_spec")
+        and state.get("task_contract")
+    ):
+        return "repo_scan"
+    return "intake"
+
+
 def route_after_retrieve(state: AgentState) -> str:
     if is_analysis_task(state):
         return "analyze_repo"
@@ -287,6 +298,19 @@ def route_after_verify(state: AgentState) -> str:
         and required_unverified > 0
         and all_executed_commands_passed
     )
+
+    def has_unverified_execution_requirement() -> bool:
+        check = state.get("requirement_atom_check") or {}
+        for atom in check.get("atoms") or []:
+            if not isinstance(atom, dict) or str(atom.get("status") or "") != "unverified":
+                continue
+            data = atom.get("data") if isinstance(atom.get("data"), dict) else {}
+            mode = str(data.get("evidence_mode") or "").strip().lower()
+            if not mode:
+                mode = "runtime" if str(atom.get("type") or "") == "constraint" else "execution"
+            if mode == "execution":
+                return True
+        return False
     if state.get("verification_stalled") and not evidence_only_gap:
         repeat_count = int(state.get("verification_failure_repeat_count", 0) or 0)
         state["needs_verification"] = False
@@ -308,7 +332,12 @@ def route_after_verify(state: AgentState) -> str:
         return "report"
     if evidence_only_gap:
         attempts = int(state.get("verification_plan_attempts", 0) or 0)
-        if attempts < MAX_VERIFICATION_PLAN_ATTEMPTS:
+        # The verification planner can only add execution scenarios. Artifact,
+        # runtime, and analysis evidence gaps must proceed to the deliverable
+        # audit (or a bounded incomplete report); routing them back to verify
+        # cannot increment the planner budget and otherwise forms an infinite
+        # verify -> verify loop.
+        if has_unverified_execution_requirement() and attempts < MAX_VERIFICATION_PLAN_ATTEMPTS:
             state["needs_verification"] = True
             state["verification_reason"] = "required behavior lacks executed evidence; replan verification without changing implementation"
             return "verify"
@@ -359,7 +388,10 @@ def build_graph():
     builder.add_node("strategy_reflection", strategy_reflection_node)
     builder.add_node("report", report_node)
 
-    builder.add_edge(START, "intake")
+    builder.add_conditional_edges(START, route_from_start, {
+        "intake": "intake",
+        "repo_scan": "repo_scan",
+    })
     builder.add_edge("intake", "supervisor")
     builder.add_edge("supervisor", "repo_scan")
     builder.add_edge("repo_scan", "task_clarify")

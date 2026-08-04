@@ -12,6 +12,7 @@ from coding_agent.core.llm_client import OpenAICompatClient
 from coding_agent.core.utils import extract_json_object, truncate
 from coding_agent.memory.reflexion_store import append_reflexion, build_reflexion_from_state
 from coding_agent.repair.repair_controller import build_repair_controller, finalize_repair_controller
+from coding_agent.safety.path_guard import is_within_workspace
 from coding_agent.scope.scope_contract import path_allows_modify
 from .common import get_trace
 
@@ -69,7 +70,7 @@ def _safe_read_many(workspace: str, paths: list[str], max_chars_each: int = 5000
     for rel in paths:
         try:
             p = (root / rel).resolve()
-            if not str(p).startswith(str(root)) or not p.is_file():
+            if not is_within_workspace(root, p) or not p.is_file():
                 continue
             out[rel] = truncate(p.read_text(encoding="utf-8", errors="replace"), max_chars_each)
         except Exception as e:

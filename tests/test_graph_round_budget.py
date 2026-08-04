@@ -32,11 +32,45 @@ def test_route_after_verify_replans_evidence_without_repairing_implementation():
             "required_unverified": 1,
         },
         "verification_plan_attempts": 0,
+        "requirement_atom_check": {
+            "atoms": [{
+                "id": "requirement:behavior",
+                "status": "unverified",
+                "type": "behavior",
+                "data": {"evidence_mode": "execution"},
+            }]
+        },
     }
 
     assert route_after_verify(state) == "verify"
     assert state["needs_verification"] is True
     assert state.get("failure") is None
+
+
+def test_route_after_verify_does_not_loop_on_artifact_evidence_gap(monkeypatch):
+    state = {
+        "mode": "write",
+        "read_only": False,
+        "verification": {"ok": False, "results": [{"name": "pytest", "returncode": 0}]},
+        "requirement_atom_summary": {
+            "required_total": 1,
+            "required_failed": 0,
+            "required_unverified": 1,
+        },
+        "requirement_atom_check": {
+            "atoms": [{
+                "id": "requirement:package_metadata",
+                "status": "unverified",
+                "type": "constraint",
+                "data": {"evidence_mode": "artifact"},
+            }]
+        },
+        "verification_plan_attempts": 0,
+    }
+    monkeypatch.setattr("coding_agent.graph.deliverable_review_needed", lambda _state: False)
+
+    assert route_after_verify(state) == "report"
+    assert state["stopped_reason"] == "verification_evidence_incomplete"
 
 
 def test_route_after_verify_stops_after_bounded_evidence_replanning():

@@ -50,6 +50,9 @@ Rules:
   never calls it. Patch the existing reachable execution path identified by
   the task or failure evidence; remove an unrequested disconnected alternate
   entry point after relocating its required behavior.
+- When a subprocess prints the expected error but reports the wrong process
+  exit code, inspect the launcher, module entry point, and console wrapper as
+  well as the handler; a returned status must reach the operating system.
 - Do not broaden a fix to additional branches merely for symmetry or
   consistency. An untouched branch is a compatibility constraint when no
   evidence says its behavior should change.

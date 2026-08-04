@@ -6,7 +6,8 @@ from typing import Any
 from coding_agent.verification.test_registry import registered_test_paths
 from coding_agent.workspace.failed_writes import failed_write_for_path
 from coding_agent.workspace.run_paths import is_test_like_path
-from coding_agent.scope.scope_contract import path_allows_modify
+from coding_agent.scope.scope_contract import path_allows_modify, path_is_protected
+from coding_agent.scope.write_scope import extract_mentioned_paths
 
 
 def _norm(path: str | None) -> str:
@@ -69,6 +70,22 @@ def _generated_test_targets(state: dict[str, Any]) -> list[str]:
     return out
 
 
+def _safe_create_generated_code_targets(state: dict[str, Any]) -> list[str]:
+    """Return the bounded implementation scope owned by this greenfield run.
+
+    A traceback identifies where an invalid call was observed, not necessarily
+    where its contract should be repaired.  For example, a caller can expose a
+    missing method owned by an adjacent generated model module.  It is safe to
+    retain all current-run code files for a safe-create project because none of
+    them predated the agent run; existing-project repairs remain narrowly
+    constrained by their explicit modification scope.
+    """
+    intent = state.get("task_intent") or {}
+    if str(intent.get("operation_mode") or "") != "safe_create":
+        return []
+    return _generated_code_targets(state)[:8]
+
+
 def _scope_source_targets(state: dict[str, Any]) -> list[str]:
     scope = (
         state.get("scope_contract")
@@ -89,6 +106,33 @@ def _scope_source_targets(state: dict[str, Any]) -> list[str]:
         ):
             out.append(rel)
     return out
+
+
+def _broad_repair_allows_runtime_target(
+    state: dict[str, Any],
+    scope: dict[str, Any],
+    path: str,
+) -> bool:
+    """Accept a concrete runtime target when pre-scan LLM scope was speculative."""
+    rel = _norm(path)
+    intent = state.get("task_intent") or {}
+    completeness = state.get("task_completeness") or {}
+    if (
+        not rel
+        or _is_test_path(rel)
+        or state.get("mode") not in {"modify", "debug", "repair_existing"}
+        or not intent.get("source_modify_intent")
+        or str(completeness.get("target_clarity") or "") != "repository_discoverable"
+        or scope.get("semantic_write_scope_source") != "llm"
+        or path_is_protected(scope, rel)
+    ):
+        return False
+    mentioned = {_norm(path) for path in extract_mentioned_paths(str(state.get("task") or ""))}
+    allowed = {_norm(path) for path in scope.get("allowed_modify_paths") or []}
+    if allowed.intersection(mentioned):
+        return False
+    workspace = state.get("workspace")
+    return bool(workspace and (Path(str(workspace)) / rel).is_file())
 
 
 def _has_unlocalized_behavior_failure(issues: list[dict[str, Any]]) -> bool:
@@ -430,11 +474,28 @@ def _fallback_route(state: dict[str, Any], issues: list[dict[str, Any]]) -> dict
                 issue_targets = [
                     path
                     for path in issue_targets
-                    if path_allows_modify(scope, path) and not _is_test_path(path)
+                    if (
+                        (
+                            path_allows_modify(scope, path)
+                            or path in set(scope.get("expanded_modify_paths") or [])
+                            or _broad_repair_allows_runtime_target(state, scope, path)
+                        )
+                        and not _is_test_path(path)
+                    )
                 ]
             target_files = list(dict.fromkeys(scope_targets + issue_targets))[:8]
+            if not target_files:
+                # In a safe-create run there is no pre-existing modification
+                # scope. An unlocalized runtime failure may live in a wrapper,
+                # package entry point, or adjacent generated module, so retain
+                # the bounded set of current-agent code instead of choosing an
+                # arbitrary first file.
+                target_files = _generated_code_targets(state)[:8]
         else:
             target_files = list(dict.fromkeys(issue_targets))
+            generated_scope = _safe_create_generated_code_targets(state)
+            if generated_scope:
+                target_files = list(dict.fromkeys(target_files + generated_scope))[:8]
         return {
             "route": "fix_implementation",
             "failure_owner": "implementation" if not generated else "implementation_and_generated_test",
@@ -588,7 +649,14 @@ def finalize_repair_controller(
                 targets = [
                     path
                     for path in targets
-                    if path_allows_modify(scope, path) and not _is_test_path(path)
+                    if (
+                        (
+                            path_allows_modify(scope, path)
+                            or path in set(scope.get("expanded_modify_paths") or [])
+                            or _broad_repair_allows_runtime_target(state, scope, path)
+                        )
+                        and not _is_test_path(path)
+                    )
                 ]
             base_targets = [
                 _norm(str(path))
@@ -598,7 +666,11 @@ def finalize_repair_controller(
             if scope_targets:
                 base_targets = [
                     path for path in base_targets
-                    if path_allows_modify(scope, path)
+                    if (
+                        path_allows_modify(scope, path)
+                        or path in set(scope.get("expanded_modify_paths") or [])
+                        or _broad_repair_allows_runtime_target(state, scope, path)
+                    )
                 ]
             issues = [
                 issue
@@ -607,6 +679,12 @@ def finalize_repair_controller(
             ]
             if _has_unlocalized_behavior_failure(issues):
                 targets = list(dict.fromkeys(scope_targets + base_targets + targets))[:8]
+            elif _safe_create_generated_code_targets(state):
+                targets = list(dict.fromkeys(
+                    base_targets
+                    + targets
+                    + _safe_create_generated_code_targets(state)
+                ))[:8]
             elif not targets:
                 targets = base_targets or scope_targets or _generated_code_targets(state)[:1]
 

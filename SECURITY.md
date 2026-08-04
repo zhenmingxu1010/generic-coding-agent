@@ -17,6 +17,13 @@ This project lets an LLM propose file and shell operations. The runtime applies
 path, command, write-scope, and read-only guards, but these controls do not make
 arbitrary untrusted code safe to execute.
 
+Read-only analysis does not execute project shell commands or tests. A user may
+explicitly request verify-only execution; project tests can contain arbitrary
+code, so that mode still requires an isolated or trusted workspace. Workspace
+file discovery ignores symbolic links that resolve outside the authorized
+root, and command policy blocks known indirect write/exec forms, but these are
+defense-in-depth controls rather than an operating-system sandbox.
+
 - Run the agent with the least filesystem and network access it needs.
 - Use a disposable workspace or container for untrusted repositories.
 - Review generated changes before merging or deploying them.

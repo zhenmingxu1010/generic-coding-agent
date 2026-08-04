@@ -72,7 +72,26 @@ def _extract_raw_write_scope(llm_obj: dict[str, Any] | None) -> dict[str, Any] |
         return llm_obj
     for key in ("write_scope_intent", "semantic_write_scope", "source_write_intent"):
         raw = llm_obj.get(key)
-        if isinstance(raw, dict):
+        # Intake fallback objects keep an empty write_scope_intent field for
+        # schema stability.  An empty object is absence of semantic evidence,
+        # not a confident read-only decision; treating it as valid silently
+        # converts repair tasks into verify-only runs when the LLM is offline.
+        if isinstance(raw, dict) and any(
+            field in raw
+            for field in (
+                "task_mode",
+                "mode",
+                "source_modification",
+                "existing_file_modification",
+                "source_modification_allowed",
+                "existing_file_modification_allowed",
+                "allowed_operations",
+                "path_operations",
+                "protected_paths",
+                "create_paths",
+                "allowed_modify_paths",
+            )
+        ):
             return raw
     raw = llm_obj.get("write_scope")
     if isinstance(raw, dict) and any(k in raw for k in ("task_mode", "source_modification", "allowed_operations")):

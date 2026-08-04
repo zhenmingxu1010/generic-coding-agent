@@ -274,6 +274,13 @@ def run_tests(
     stdout/stderr as diagnostic evidence, while the primary output is parsed
     JUnit XML so later diagnose/repair code can consume structured failures.
     """
+    if read_only:
+        return ToolResult(
+            tool="run_tests",
+            ok=False,
+            message="read-only analysis blocks project test execution",
+            data={"kind": kind, "targets": targets or [], "blocked_by_policy": True, "read_only_execution_blocked": True},
+        )
     if kind != "pytest":
         return ToolResult(tool="run_tests", ok=False, message=f"unsupported test kind: {kind}", data={"kind": kind})
     try:

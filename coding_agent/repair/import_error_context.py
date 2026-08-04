@@ -4,6 +4,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from coding_agent.safety.path_guard import is_within_workspace
+
 
 MISSING_MODULE_RE = re.compile(r"ModuleNotFoundError:\s+No module named ['\"]([^'\"]+)['\"]")
 SKIP_DIRS = {
@@ -88,7 +90,7 @@ def _package_dirs(root: Path, limit: int = 120) -> list[str]:
         return []
     out: list[str] = []
     for init_file in root.rglob("__init__.py"):
-        if _is_skipped(init_file, root):
+        if _is_skipped(init_file, root) or not is_within_workspace(root, init_file):
             continue
         try:
             rel = init_file.parent.relative_to(root).as_posix()
@@ -118,11 +120,13 @@ def _module_path_candidates(root: Path, module: str) -> list[dict[str, Any]]:
             if candidate in checked:
                 continue
             checked.add(candidate)
-            if (root / candidate).exists():
+            if (root / candidate).exists() and is_within_workspace(root, root / candidate):
                 candidates.append({"path": candidate, "kind": kind, "exists": True})
         package_dir = root / base / rel
-        if package_dir.is_dir():
+        if package_dir.is_dir() and is_within_workspace(root, package_dir):
             for child in sorted(package_dir.glob("*.py"))[:20]:
+                if not is_within_workspace(root, child):
+                    continue
                 if child.name in {"__init__.py", "__main__.py"}:
                     continue
                 candidate = (base / rel / child.name).as_posix()
@@ -145,10 +149,10 @@ def _module_path_candidates(root: Path, module: str) -> list[dict[str, Any]]:
 def _project_config(root: Path) -> dict[str, Any]:
     out: dict[str, Any] = {"files": [], "pyproject": {}}
     for name in ["pyproject.toml", "setup.cfg", "setup.py", "requirements.txt"]:
-        if (root / name).exists():
+        if (root / name).exists() and is_within_workspace(root, root / name):
             out["files"].append(name)
     pyproject = root / "pyproject.toml"
-    if pyproject.exists():
+    if pyproject.exists() and is_within_workspace(root, pyproject):
         text = pyproject.read_text(encoding="utf-8", errors="replace")
         low = text.lower()
         out["pyproject"] = {

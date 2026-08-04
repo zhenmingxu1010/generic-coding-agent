@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title description">
   <title id="title">Generic Coding Agent validation summary</title>
-  <desc id="description">Terminal-style summary showing eleven of eleven model-backed scenarios, 536 offline tests, package build, and isolated wheel smoke checks passing.</desc>
+  <desc id="description">Terminal-style summary showing eleven of eleven model-backed scenarios, 574 offline tests, package build, and isolated wheel smoke checks passing.</desc>
   <rect width="1280" height="720" rx="18" fill="#0d1117"/>
   <rect width="1280" height="58" rx="18" fill="#161b22"/>
   <rect y="40" width="1280" height="18" fill="#161b22"/>
@@ -19,7 +19,7 @@
     <text x="42" y="302" fill="#8b949e">$ python scripts/release_check.py</text>
     <text x="42" y="339" fill="#3fb950">PASS</text><text x="112" y="339" fill="#c9d1d9">source scan        0 credential/private-path hits</text>
     <text x="42" y="373" fill="#3fb950">PASS</text><text x="112" y="373" fill="#c9d1d9">compile            coding_agent + evaluations + tests</text>
-    <text x="42" y="407" fill="#3fb950">PASS</text><text x="112" y="407" fill="#f0f6fc">pytest             536 passed</text>
+    <text x="42" y="407" fill="#3fb950">PASS</text><text x="112" y="407" fill="#f0f6fc">pytest             574 passed</text>
     <text x="42" y="441" fill="#3fb950">PASS</text><text x="112" y="441" fill="#c9d1d9">build              wheel + source distribution</text>
     <text x="42" y="475" fill="#3fb950">PASS</text><text x="112" y="475" fill="#c9d1d9">wheel smoke        isolated import + 3 console entry points</text>
     <text x="42" y="513" fill="#58a6ff">RESULT</text><text x="130" y="513" fill="#f0f6fc">local v0.1.0-alpha release gate passed</text>

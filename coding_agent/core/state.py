@@ -10,6 +10,8 @@ class AgentState(TypedDict, total=False):
     max_rounds: int
     max_repair_llm_calls: int
     mode: str
+    resumed_from_checkpoint: bool
+    resumed_from_stopped_reason: str
     supervisor: dict[str, Any]
     invariants: list[str]
     read_only: bool

@@ -15,7 +15,7 @@ auditable run record.
 ![Validated terminal summary](docs/assets/validated-demo.svg)
 
 The summary records release evidence: 11/11 detailed model-backed scenarios,
-536 offline tests, isolated wheel import, and the local release gate. See
+574 offline tests, isolated wheel import, and the local release gate. See
 [Demo](docs/DEMO.md) and
 [validation transcript](docs/assets/validated-demo.txt) for reproducible steps
 and accessible text.
@@ -45,6 +45,8 @@ can share one configuration format.
 - Requirement decomposition into artifact, behavior, constraint, and quality
   atoms.
 - Execution-backed verification and a deterministic final gate.
+- Controlled verification of PEP 621 `[project.scripts]` console entries
+  without globally allowlisting generated executable names.
 - Bounded diagnosis and repair with repeated-action protection.
 - Project memory, context compression, trace logs, and exportable audit bundles.
 - A provider-neutral eleven-case end-to-end regression matrix.
@@ -212,10 +214,14 @@ coverage and expected conditions.
 
 ## Safety boundaries
 
-The runtime validates paths, shell commands, read-only mode, write intent, and
-workspace changes. These controls reduce accidental damage; they are not a
-sandbox for arbitrary untrusted code. Use a disposable workspace or container,
-grant the least required permissions, and review generated changes.
+The runtime validates resolved path ancestry, skips workspace symlinks that
+target external files, blocks project execution during read-only analysis, and
+checks shell commands, write intent, and workspace changes. Verify-only mode
+may execute project tests when the user explicitly requests verification, but
+does not enable file-write tools. These controls reduce accidental damage;
+they are not a sandbox for arbitrary untrusted code. Use a disposable
+workspace or container, grant the least required permissions, and review
+generated changes.
 
 See [Security model](docs/SECURITY_MODEL.md) and [Security policy](SECURITY.md).
 

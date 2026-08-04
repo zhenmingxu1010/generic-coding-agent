@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from coding_agent.tools.file_tools import filter_files, read_many_files, write_file
+import pytest
+
+from coding_agent.tools.file_tools import filter_files, read_many_files, search_text, write_file
 
 
 def test_filter_files_matches_paths(tmp_path: Path):
@@ -28,3 +30,22 @@ def test_write_file_creates_missing_parent_directories(tmp_path: Path):
 
     assert res.ok
     assert (tmp_path / "reports" / "nested" / "out.md").read_text(encoding="utf-8") == "# ok\n"
+
+
+def test_search_and_filter_skip_file_symlink_that_escapes_workspace(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    outside = tmp_path / "outside.txt"
+    workspace.mkdir()
+    outside.write_text("EXTERNAL_SECRET_TOKEN", encoding="utf-8")
+    link = workspace / "linked.txt"
+    try:
+        link.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlinks are unavailable: {exc}")
+
+    search = search_text(str(workspace), "EXTERNAL_SECRET_TOKEN")
+    filtered = filter_files(str(workspace), glob="*.txt")
+
+    assert search.ok
+    assert search.data["matches"] == []
+    assert "linked.txt" not in filtered.data["matches"]

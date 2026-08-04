@@ -9,6 +9,7 @@ from typing import Any
 
 from coding_agent.tools.file_tools import SKIP_DIRS, BINARY_SUFFIXES
 from coding_agent.core.utils import truncate
+from coding_agent.safety.path_guard import is_within_workspace
 
 TEXT_SUFFIXES = {
     ".py", ".sh", ".bash", ".zsh", ".yaml", ".yml", ".json", ".toml", ".ini", ".cfg", ".md", ".txt", ".rst", ".csv",
@@ -36,11 +37,18 @@ def _safe_read(path: Path, max_chars: int = 120000) -> str:
 
 
 def _walk(root: Path, max_files: int = 20000) -> list[str]:
+    root = root.resolve()
     out: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        dirnames[:] = [
+            d for d in dirnames
+            if d not in SKIP_DIRS and is_within_workspace(root, Path(dirpath) / d)
+        ]
         for name in filenames:
-            rel = str((Path(dirpath) / name).relative_to(root))
+            path = Path(dirpath) / name
+            if not is_within_workspace(root, path):
+                continue
+            rel = str(path.relative_to(root))
             out.append(rel)
             if len(out) >= max_files:
                 return sorted(out)

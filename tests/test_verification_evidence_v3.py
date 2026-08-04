@@ -151,26 +151,26 @@ def test_agent_default_execution_gate_reuses_grounded_task_behavior(monkeypatch,
     assert "requirement:observable_behavior" in aggregate["evidence"][0]
 
 
-def test_agent_default_cli_gate_reuses_observed_usage_path(monkeypatch, tmp_path: Path):
+def test_agent_default_cli_gate_reuses_successful_public_command(monkeypatch, tmp_path: Path):
     state = _behavior_state(tmp_path)
     state["task_contract"]["requirement_atoms"].append({
         "id": "implementation:usable_cli_invocation",
         "type": "behavior",
-        "description": "The CLI exposes usage guidance.",
+        "description": "The CLI can be invoked through a public path.",
         "required": True,
         "source": "agent_implementation_default",
         "data": {"evidence_mode": "execution", "contract_source": "agent_defaults"},
     })
     state["file_plan"]["verify_steps"][0].update({
         "command": ["python", "tool.py"],
-        "expected": "stderr contains a Usage message.",
+        "expected": "the command prints an observable result.",
     })
     _Client.response = json.dumps({"claims": [
         {
             "atom_id": "requirement:observable_behavior",
             "status": "passed",
             "cited_steps": ["public_behavior"],
-            "evidence": ["Usage: tool.py INPUT"],
+            "evidence": ["observable result"],
             "reason": "the public path executed",
         },
         {
@@ -188,8 +188,8 @@ def test_agent_default_cli_gate_reuses_observed_usage_path(monkeypatch, tmp_path
         [{
             "name": "public_behavior",
             "returncode": 0,
-            "stdout": "",
-            "stderr": "Usage: tool.py INPUT",
+            "stdout": "observable result",
+            "stderr": "",
             "timed_out": False,
             "executed": True,
         }],
@@ -200,6 +200,44 @@ def test_agent_default_cli_gate_reuses_observed_usage_path(monkeypatch, tmp_path
     assert claims["implementation:usable_cli_invocation"]["cited_steps"] == ["public_behavior"]
 
 
+def test_separate_named_tests_jointly_cover_composite_requirement(monkeypatch, tmp_path: Path):
+    atom = {
+        "id": "requirement:error_handling",
+        "type": "behavior",
+        "description": "Missing files and invalid UTF-8 produce safe errors.",
+        "verify_hint": "Check a missing file and invalid UTF-8 input.",
+        "data": {"evidence_mode": "execution"},
+    }
+    state = {
+        "workspace": str(tmp_path),
+        "task": "Handle missing files and invalid UTF-8 safely.",
+        "task_contract": {"requirement_atoms": [atom]},
+        "file_plan": {"verify_steps": []},
+        "test_results": {"runs": [{
+            "name": "pytest",
+            "ok": True,
+            "total": 2,
+            "testcases": [
+                {"test": "tests.test_cli::test_missing_file", "status": "passed"},
+                {"test": "tests.test_cli::test_invalid_utf8", "status": "passed"},
+            ],
+        }]},
+    }
+    _Client.response = json.dumps({"claims": []})
+    monkeypatch.setattr(behavior_review, "OpenAICompatClient", _Client)
+
+    claims = behavior_review.review_behavior_evidence(
+        state,
+        [{"name": "pytest", "returncode": 0, "stdout": "2 passed", "stderr": "", "timed_out": False}],
+        [],
+    )
+
+    assert claims[atom["id"]]["status"] == "passed"
+    evidence = " ".join(claims[atom["id"]]["evidence"])
+    assert "test_missing_file" in evidence
+    assert "test_invalid_utf8" in evidence
+
+
 def test_passing_project_tests_are_reused_as_matching_requirement_evidence(monkeypatch, tmp_path: Path):
     atoms = [
         {
@@ -207,6 +245,13 @@ def test_passing_project_tests_are_reused_as_matching_requirement_evidence(monke
             "type": "behavior",
             "description": "All existing tests pass.",
             "verify_hint": "Run pytest and observe all tests pass.",
+            "data": {"evidence_mode": "execution"},
+        },
+        {
+            "id": "requirement:full_suite_passes",
+            "type": "behavior",
+            "description": "The full test suite passes after the correction.",
+            "verify_hint": "Run the full test suite and observe success.",
             "data": {"evidence_mode": "execution"},
         },
         {
@@ -250,6 +295,7 @@ def test_passing_project_tests_are_reused_as_matching_requirement_evidence(monke
     )
 
     assert claims["requirement:all_tests_pass"]["status"] == "passed"
+    assert claims["requirement:full_suite_passes"]["status"] == "passed"
     assert claims["requirement:cli_unchanged"]["status"] == "unverified"
     assert claims["requirement:uncovered_behavior"]["status"] == "unverified"
 
@@ -667,6 +713,47 @@ def test_evidence_reviewer_accepts_authoritative_runtime_constraint(monkeypatch,
         "runtime:generated_files",
         "runtime:output_layout",
     ]
+
+
+def test_artifact_constraint_exposes_only_named_generated_file(monkeypatch, tmp_path: Path):
+    (tmp_path / "project.toml").write_text("dependencies = []\n", encoding="utf-8")
+    (tmp_path / "implementation.py").write_text("SECRET_DETAIL = 1\n", encoding="utf-8")
+    atom = {
+        "id": "requirement:metadata",
+        "type": "constraint",
+        "description": "Project metadata declares no required packages.",
+        "required": True,
+        "data": {"evidence_mode": "artifact"},
+        "verify_hint": "Inspect project.toml metadata.",
+    }
+    state = {
+        "workspace": str(tmp_path),
+        "task": "Create a package with dependency-free metadata.",
+        "task_contract": {"requirement_atoms": [atom]},
+        "generated_files": [
+            {"path": "project.toml", "kind": "config"},
+            {"path": "implementation.py", "kind": "code"},
+        ],
+    }
+    _Client.response = json.dumps({
+        "claims": [{
+            "atom_id": atom["id"],
+            "status": "passed",
+            "cited_steps": [],
+            "cited_runtime": ["runtime:artifact_requirement_files"],
+            "evidence": ["project.toml declares an empty dependencies list"],
+            "reason": "the named metadata file directly establishes the constraint",
+        }]
+    })
+    monkeypatch.setattr(behavior_review, "OpenAICompatClient", _Client)
+
+    runtime = behavior_review.build_runtime_evidence(state)
+    claims = behavior_review.review_behavior_evidence(state, [], [])
+
+    previews = runtime["runtime:artifact_requirement_files"]
+    assert list(previews) == ["project.toml"]
+    assert previews["project.toml"]["content"] == "dependencies = []\n"
+    assert claims[atom["id"]]["status"] == "passed"
 
 
 def test_verification_dedupe_preserves_same_command_in_distinct_sandboxes():

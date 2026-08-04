@@ -3,6 +3,21 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def is_within_workspace(workspace: str | Path, path: str | Path) -> bool:
+    """Return whether *path* resolves to the workspace or one of its children.
+
+    Resolve both sides so symlink aliases cannot bypass the boundary.  Path
+    ancestry is used instead of string prefixes because sibling paths such as
+    ``/work/repo-copy`` are not children of ``/work/repo``.
+    """
+    try:
+        root = Path(workspace).resolve()
+        Path(path).resolve().relative_to(root)
+        return True
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
 class PathGuard:
     def __init__(self, workspace: str | Path):
         self.workspace = Path(workspace).resolve()
@@ -13,7 +28,7 @@ class PathGuard:
         if p.is_absolute():
             raise ValueError(f"Absolute path is not allowed: {relative_path}")
         target = (self.workspace / p).resolve()
-        if self.workspace != target and self.workspace not in target.parents:
+        if not is_within_workspace(self.workspace, target):
             raise ValueError(f"Path escapes workspace: {relative_path}")
         return target
 

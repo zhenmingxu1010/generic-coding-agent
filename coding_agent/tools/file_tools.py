@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from coding_agent.core.schemas import ToolResult
-from coding_agent.safety.path_guard import PathGuard
+from coding_agent.safety.path_guard import PathGuard, is_within_workspace
 from coding_agent.core.utils import sha16, truncate
 
 
@@ -28,11 +28,17 @@ BINARY_SUFFIXES = {".pyc", ".png", ".jpg", ".jpeg", ".zip", ".pt", ".pth", ".npy
 
 
 def _walk_files(root: Path, max_files: int = 10000) -> list[str]:
+    root = root.resolve()
     files: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        dirnames[:] = [
+            d for d in dirnames
+            if d not in SKIP_DIRS and is_within_workspace(root, Path(dirpath) / d)
+        ]
         for name in filenames:
             p = Path(dirpath) / name
+            if not is_within_workspace(root, p):
+                continue
             rel = str(p.relative_to(root)).replace("\\", "/")
             files.append(rel)
             if len(files) >= max_files:
@@ -335,20 +341,18 @@ def search_text(workspace: str, pattern: str, max_matches: int = 80, regex: bool
     root = Path(workspace).resolve()
     matches: list[dict[str, Any]] = []
     rx = re.compile(pattern) if regex else None
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-        for name in filenames:
-            p = Path(dirpath) / name
-            if p.suffix in BINARY_SUFFIXES:
-                continue
-            try:
-                lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
-            except Exception:
-                continue
-            for i, line in enumerate(lines, 1):
-                found = bool(rx.search(line)) if rx else pattern in line
-                if found:
-                    matches.append({"path": str(p.relative_to(root)), "line": i, "text": line[:500]})
-                    if len(matches) >= max_matches:
-                        return ToolResult(tool="search_text", ok=True, message="matches truncated", data={"matches": matches, "truncated": True})
+    for rel in _walk_files(root, max_files=20000):
+        p = root / rel
+        if p.suffix in BINARY_SUFFIXES:
+            continue
+        try:
+            lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+        except Exception:
+            continue
+        for i, line in enumerate(lines, 1):
+            found = bool(rx.search(line)) if rx else pattern in line
+            if found:
+                matches.append({"path": rel, "line": i, "text": line[:500]})
+                if len(matches) >= max_matches:
+                    return ToolResult(tool="search_text", ok=True, message="matches truncated", data={"matches": matches, "truncated": True})
     return ToolResult(tool="search_text", ok=True, message="ok", data={"matches": matches, "truncated": False})

@@ -17,9 +17,15 @@ authorization and evidence decisions instead of delegating them to model text.
 ## Current controls
 
 - Path normalization and workspace-boundary checks.
+- Symlink target validation across repository discovery, text search,
+  interface checks, verification discovery, and workspace baselines.
 - Read-only and semantic write-scope policies.
+- Project execution disabled during read-only analysis, with a separate
+  explicit verify-only execution path that does not enable write tools.
 - Workspace baselines and post-action change audits.
 - Command policy checks before shell execution.
+- Rejection of indirect command writes/execs through `find`, in-place `sed`,
+  and Git output options.
 - Direct shell-script and standard-input verification without enabling inline
   shell commands, redirection, or interpreter options.
 - Structured tool arguments and results.

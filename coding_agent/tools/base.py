@@ -179,7 +179,15 @@ class ToolRegistry:
     def schema_text(self) -> str:
         return "Tool schemas:\n" + "\n".join(tool.schema_line() for tool in self._tools.values())
 
-    def execute(self, workspace: str, name: str, args: dict[str, Any] | None, *, read_only: bool = False) -> ToolResult:
+    def execute(
+        self,
+        workspace: str,
+        name: str,
+        args: dict[str, Any] | None,
+        *,
+        read_only: bool = False,
+        allow_read_only_execution: bool = False,
+    ) -> ToolResult:
         raw_args = dict(args or {})
         tool = self.get(name)
         if tool is None:
@@ -193,11 +201,25 @@ class ToolRegistry:
                 message=f"read-only policy blocks write tool: {name}",
                 data={"blocked_by_policy": True, "raw_args": raw_args, "normalized_args": normalized_args},
             )
+        executes_project_code = tool.category in {"execute", "verify"}
+        if read_only and executes_project_code and not allow_read_only_execution:
+            return ToolResult(
+                tool=name,
+                ok=False,
+                message=f"read-only analysis blocks project code execution: {name}",
+                data={
+                    "blocked_by_policy": True,
+                    "read_only_execution_blocked": True,
+                    "raw_args": raw_args,
+                    "normalized_args": normalized_args,
+                },
+            )
         if schema_error is not None:
             return schema_error
 
         try:
-            return tool.call(workspace, normalized_args, read_only=read_only)
+            effective_read_only = read_only and not (executes_project_code and allow_read_only_execution)
+            return tool.call(workspace, normalized_args, read_only=effective_read_only)
         except TypeError as e:
             return ToolResult(
                 tool=name,

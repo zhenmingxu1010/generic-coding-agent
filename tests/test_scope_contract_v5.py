@@ -200,6 +200,39 @@ def test_llm_scope_does_not_expand_to_unread_or_unrelated_source(tmp_path: Path)
     )[0] is False
 
 
+def test_repository_discoverable_repair_can_expand_beyond_llm_guessed_area(tmp_path: Path):
+    (tmp_path / "package").mkdir()
+    (tmp_path / "package" / "storage.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "metadata.toml").write_text("[project]\n", encoding="utf-8")
+    ensure_workspace_baseline(tmp_path)
+    scope = {
+        "allowed_modify_paths": ["metadata.toml"],
+        "semantic_write_scope_source": "llm",
+    }
+    state = {
+        "workspace": str(tmp_path),
+        "task": "Inspect and repair the existing project implementation.",
+        "mode": "debug",
+        "read_only": False,
+        "task_intent": {"source_modify_intent": True},
+        "task_completeness": {"target_clarity": "repository_discoverable"},
+        "scope_contract": scope,
+        "action_history": [{
+            "tool": "read_file",
+            "args": {"path": "package/storage.py"},
+            "ok": True,
+        }],
+    }
+
+    ok, _reason, detail = can_execute_write_intent(
+        state, "package/storage.py", exists=True
+    )
+
+    assert ok is True
+    assert detail["scope_expansion"] is True
+    assert scope["expanded_modify_paths"] == ["package/storage.py"]
+
+
 def test_explicit_user_scope_never_expands_from_read_history(tmp_path: Path):
     (tmp_path / "package").mkdir()
     (tmp_path / "package" / "core.py").write_text("VALUE = 1\n", encoding="utf-8")

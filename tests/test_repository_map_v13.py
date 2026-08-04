@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from coding_agent.workspace.repo_map import build_repository_map, coverage_check, heuristic_select_evidence, add_targeted_retrieval
 
 
@@ -56,3 +58,20 @@ def test_targeted_retrieval_improves_missing_roles(tmp_path: Path):
     after = coverage_check(after_sel, repo_map)
     assert after["coverage_ratio"] >= before["coverage_ratio"]
     assert len(after_sel["selected_files"]) >= 1
+
+
+def test_repository_map_skips_file_symlink_outside_workspace(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    outside = tmp_path / "outside.py"
+    workspace.mkdir()
+    outside.write_text("EXTERNAL_SECRET = 'do-not-read'\n", encoding="utf-8")
+    link = workspace / "linked.py"
+    try:
+        link.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlinks are unavailable: {exc}")
+
+    repo_map = build_repository_map(str(workspace))
+
+    assert "linked.py" not in repo_map["files"]
+    assert all(record["path"] != "linked.py" for record in repo_map["records"])

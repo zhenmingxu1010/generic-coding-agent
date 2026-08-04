@@ -9,6 +9,7 @@ from typing import Any
 
 from coding_agent.workspace.repo_map import compact_repo_map_for_llm
 from coding_agent.tools.file_tools import BINARY_SUFFIXES
+from coding_agent.safety.path_guard import is_within_workspace
 from coding_agent.core.utils import sha16, truncate, write_json
 
 
@@ -301,7 +302,7 @@ def select_context_files(state: dict[str, Any], max_files: int = 18) -> list[dic
     ranked = []
     for rel, item in scored.items():
         p = (root / rel).resolve()
-        if not str(p).startswith(str(root)) or not p.is_file():
+        if not is_within_workspace(root, p) or not p.is_file():
             continue
         if p.suffix.lower() in BINARY_SUFFIXES:
             continue
@@ -575,7 +576,7 @@ def _materialize_evidence_blocks(state: dict[str, Any], planned_files: list[dict
         if not rel:
             continue
         p = (root / rel).resolve()
-        if not str(p).startswith(str(root)) or not p.is_file():
+        if not is_within_workspace(root, p) or not p.is_file():
             continue
         suffix = p.suffix.lower()
         if suffix in BINARY_SUFFIXES or (suffix and suffix not in TEXT_CONTEXT_SUFFIXES):

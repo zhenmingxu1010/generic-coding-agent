@@ -194,5 +194,18 @@ WRITE_TOOLS = DEFAULT_TOOL_REGISTRY.write_tools()
 READ_TOOLS = DEFAULT_TOOL_REGISTRY.tools_by_category("read")
 
 
-def execute_tool(workspace: str, tool: str, args: dict[str, Any], *, read_only: bool = False) -> ToolResult:
-    return DEFAULT_TOOL_REGISTRY.execute(workspace, tool, args, read_only=read_only)
+def execute_tool(
+    workspace: str,
+    tool: str,
+    args: dict[str, Any],
+    *,
+    read_only: bool = False,
+    allow_read_only_execution: bool = False,
+) -> ToolResult:
+    return DEFAULT_TOOL_REGISTRY.execute(
+        workspace,
+        tool,
+        args,
+        read_only=read_only,
+        allow_read_only_execution=allow_read_only_execution,
+    )

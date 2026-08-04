@@ -40,9 +40,18 @@ def _contains(text: str, zh: tuple[str, ...], en: tuple[str, ...]) -> bool:
     )
 
 
-def _activity(task: str, intent: dict[str, Any]) -> str:
+def _activity(task: str, intent: dict[str, Any], *, workspace_nonempty: bool) -> str:
     operation_mode = str(intent.get("operation_mode") or "")
     mode = str(intent.get("mode") or "")
+    # In an empty workspace, a resolved safe-create intent is authoritative.
+    # Command names such as "add" may otherwise look like requests to modify
+    # an existing repository even when the user clearly asked to build a new
+    # CLI or project.
+    if not workspace_nonempty and (
+        operation_mode == "safe_create"
+        or (mode in {"write", "generate_project"} and intent.get("create_requested"))
+    ):
+        return "create"
     if _contains(task, _REPAIR_ZH, _REPAIR_EN):
         return "repair"
     if _contains(task, _MODIFY_ZH, _MODIFY_EN):
@@ -127,10 +136,10 @@ def _implementation_contract(activity: str, task: str, assumptions: list[dict[st
             "id": "usable_cli_invocation",
             "kind": "behavior",
             "scope": "implementation",
-            "description": "The command-line entry point can be invoked successfully and exposes basic usage guidance.",
+            "description": "The command-line entry point can be invoked successfully through a public execution path.",
             "required": True,
             "evidence_mode": "execution",
-            "verification_hint": "Invoke the CLI help path and one representative command.",
+            "verification_hint": "Invoke one representative public CLI command and check its observable result.",
         })
     return {
         "version": "implementation_contract_v1",
@@ -155,8 +164,8 @@ def assess_task_completeness(
     task_spec = dict(task_spec or {})
     task_intent = dict(task_intent or {})
     repo_map = dict(repo_map or {})
-    activity = _activity(task, task_intent)
     workspace_nonempty, has_tests, project_types = _repo_facts(repo_map)
+    activity = _activity(task, task_intent, workspace_nonempty=workspace_nonempty)
     remainder = _semantic_remainder(task, activity)
     # The original task text is authoritative for core behavior. Intake may
     # legitimately infer an artifact path from a vague request (for example

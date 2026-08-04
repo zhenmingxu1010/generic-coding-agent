@@ -179,6 +179,57 @@ def test_final_gate_accepts_verified_modify_task_when_behavior_already_satisfies
     assert "requirements_verified_without_implementation_change" in gate["warnings"]
 
 
+def test_final_gate_accepts_noop_repair_proved_by_named_project_tests():
+    state = _base_write_state()
+    atom = {
+        "id": "requirement:documented_behavior",
+        "type": "behavior",
+        "source": "llm_task_requirement",
+        "status": "passed",
+        "data": {"evidence_mode": "execution"},
+        "details": {
+            "verification_claim": {
+                "status": "passed",
+                "cited_steps": ["pytest"],
+                "evidence": ["passing project test names match the requirement"],
+            }
+        },
+    }
+    state.update({
+        "mode": "modify",
+        "task_intent": {"source_modify_intent": True, "operation_mode": "scoped_modify"},
+        "changed_files": [],
+        "generated_files": [],
+        "executed_verification_steps": [{
+            "name": "pytest",
+            "command": ["python", "-m", "pytest"],
+            "verifies": [],
+            "returncode": 0,
+            "timed_out": False,
+            "executed": True,
+        }],
+        "verification": {
+            "ok": True,
+            "results": [{"name": "pytest", "returncode": 0, "executed": True}],
+        },
+        "requirement_atom_check": {
+            "ok": True,
+            "atoms": [atom],
+            "summary": {"required_total": 1, "required_failed": 0, "required_unverified": 0},
+        },
+        "requirement_atom_summary": {
+            "required_total": 1,
+            "required_failed": 0,
+            "required_unverified": 0,
+        },
+    })
+
+    gate = compute_final_gate(state)
+
+    assert gate["ok"] is True
+    assert "requirements_verified_without_implementation_change" in gate["warnings"]
+
+
 def test_final_gate_rejects_no_change_when_only_infrastructure_check_passed():
     state = _base_write_state()
     state.update(

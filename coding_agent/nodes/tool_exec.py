@@ -19,6 +19,7 @@ from coding_agent.repair.read_cache import append_read_chunk, cache_key, request
 from coding_agent.workspace.failed_writes import record_failed_write
 from coding_agent.workspace.run_paths import is_agent_test_path, is_test_like_path, mapped_agent_test_for_original
 from coding_agent.core.utils import sha16, truncate
+from coding_agent.safety.path_guard import is_within_workspace
 from .common import get_trace
 
 
@@ -545,7 +546,7 @@ def _current_file_sha16(state: dict, rel: str | None) -> str | None:
     try:
         root = Path(state["workspace"]).resolve()
         p = (root / rel).resolve()
-        if not str(p).startswith(str(root)) or not p.is_file():
+        if not is_within_workspace(root, p) or not p.is_file():
             return None
         return sha16(p.read_bytes())
     except Exception:
@@ -1072,7 +1073,17 @@ def tool_exec_node(state: dict) -> dict:
                         target_for_backup = Path(state["workspace"]) / rel_for_backup if rel_for_backup else None
                         existed_before = bool(target_for_backup and target_for_backup.exists() and target_for_backup.is_file())
                         backup = prewrite_backup(state, rel_for_backup) if existed_before else None
-                        res = execute_tool(state["workspace"], tool, args, read_only=bool(state.get("read_only", False)))
+                        allow_read_only_execution = bool(
+                            state.get("mode") == "run_verify"
+                            and tool in {"run_shell", "run_tests"}
+                        )
+                        res = execute_tool(
+                            state["workspace"],
+                            tool,
+                            args,
+                            read_only=bool(state.get("read_only", False)),
+                            allow_read_only_execution=allow_read_only_execution,
+                        )
                         result = res.model_dump()
                         if rel_for_backup:
                             result.setdefault("data", {})["existed_before"] = existed_before

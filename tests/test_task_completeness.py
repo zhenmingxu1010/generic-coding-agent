@@ -79,6 +79,34 @@ def test_short_and_detailed_prompt_share_same_execution_policy():
     }
 
 
+def test_empty_workspace_build_cli_is_not_confused_by_add_command_name():
+    task = (
+        "Build an installable Python CLI called worklog. "
+        "Support add TITLE, list, done ID, and stats commands."
+    )
+    intent = classify_task_intent(task, {
+        "task_type": "generate_project",
+        "create_paths": ["pyproject.toml", "worklog/__main__.py"],
+        "write_scope_intent": {
+            "task_mode": "generate_project",
+            "operation_mode": "safe_create",
+            "source_modification": {"allowed": False},
+            "existing_file_modification": {"allowed": False},
+            "allowed_operations": [
+                {"path": "pyproject.toml", "operation": "create_new"},
+                {"path": "worklog/__main__.py", "operation": "create_new"},
+            ],
+            "confidence": 0.95,
+        },
+    })
+
+    result = assess_task_completeness(task, {}, intent, EMPTY_REPO)
+
+    assert result["activity"] == "create"
+    assert result["decision"] == "proceed"
+    assert result["target_clarity"] == "new_artifact"
+
+
 def test_known_short_create_uses_explicit_defaults_not_user_requirements():
     task = "写个脚本统计文本行数"
     result = assess_task_completeness(task, {}, classify_task_intent(task, {}), EMPTY_REPO)

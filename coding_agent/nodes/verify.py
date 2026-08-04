@@ -6,7 +6,7 @@ import hashlib
 import shutil
 from pathlib import Path
 
-from coding_agent.workspace.run_paths import agent_test_root_rel, internal_generated_tests_enabled, is_agent_test_path
+from coding_agent.workspace.run_paths import agent_repo_root, agent_test_root_rel, internal_generated_tests_enabled, is_agent_test_path
 from coding_agent.core.schemas import VerificationResult, CommandResult
 from coding_agent.core.utils import normalize_volatile_text
 from coding_agent.verification.test_registry import refresh_verification_test_registry, registered_test_paths, normalize_rel
@@ -22,6 +22,8 @@ from coding_agent.verification.behavior_review import (
     supplement_verification_steps,
 )
 from coding_agent.verification.test_baseline import compare_with_test_baseline
+from coding_agent.verification.console_entry import adapt_console_command
+from coding_agent.safety.path_guard import is_within_workspace
 from .common import get_trace
 
 
@@ -110,6 +112,8 @@ def _find_py_files(workspace: str, state: dict | None = None) -> list[str]:
     root = Path(workspace).resolve()
     out = []
     for p in root.rglob("*.py"):
+        if not is_within_workspace(root, p):
+            continue
         rel = str(p.relative_to(root)).replace("\\", "/")
         if "__pycache__" in p.parts:
             continue
@@ -207,6 +211,7 @@ def _default_commands(state: dict) -> list[tuple[str, list[str]]]:
     state["verification_step_stdin"] = {}
     state["verification_step_success_exit_codes"] = {}
     state["verification_step_sandboxes"] = {}
+    state["verification_command_adapters"] = {}
     state["verification_infrastructure_step_names"] = []
     for step in (state.get("file_plan") or {}).get("verify_steps") or []:
         if not isinstance(step, dict):
@@ -226,7 +231,10 @@ def _default_commands(state: dict) -> list[tuple[str, list[str]]]:
             state["verification_step_stdin"][name] = str(step.get("stdin"))[:50000]
         if sandbox:
             state["verification_step_sandboxes"][name] = dict(sandbox)
-        planned_cmds.append((name, command))
+        adapted_command, adapter = adapt_console_command(workspace, command)
+        if adapter:
+            state["verification_command_adapters"][name] = adapter
+        planned_cmds.append((name, adapted_command))
     py_files = _find_py_files(workspace, state)
     refresh_verification_test_registry(state, existing_only=True)
     registry_tests = registered_test_paths(state, existing_only=True)
@@ -331,6 +339,33 @@ def _verification_command_result(
     )
 
 
+def _verification_extra_env(
+    state: dict,
+    name: str,
+    *,
+    include_project_workspace: bool = False,
+) -> dict[str, str] | None:
+    """Return execution environment required by runtime-owned adapters only."""
+    adapter = (state.get("verification_command_adapters") or {}).get(name)
+    if not adapter:
+        if not include_project_workspace:
+            return None
+        existing = os.environ.get("PYTHONPATH", "")
+        value = str(Path(state["workspace"]).resolve())
+        if existing:
+            value = os.pathsep.join((value, existing))
+        return {"PYTHONPATH": value}
+
+    paths: list[str] = []
+    if include_project_workspace:
+        paths.append(str(Path(state["workspace"]).resolve()))
+    paths.append(str(agent_repo_root().resolve()))
+    existing = os.environ.get("PYTHONPATH", "")
+    if existing:
+        paths.append(existing)
+    return {"PYTHONPATH": os.pathsep.join(paths)}
+
+
 def _pytest_pythonpath_for_targets(state: dict, targets: list[str]) -> list[str]:
     if any(is_agent_test_path(t.split("::", 1)[0], state=state) for t in targets):
         return ["."]
@@ -433,16 +468,16 @@ def verify_node(state: dict) -> dict:
             try:
                 execution_workspace = _prepare_verification_sandbox(state, name, sandbox_spec)
                 timeout = int((state.get("verification_step_timeouts") or {}).get(name, 180) or 180)
-                existing_pythonpath = os.environ.get("PYTHONPATH", "")
-                sandbox_pythonpath = str(Path(state["workspace"]).resolve())
-                if existing_pythonpath:
-                    sandbox_pythonpath = os.pathsep.join((sandbox_pythonpath, existing_pythonpath))
                 res = run_shell(
                     str(execution_workspace),
                     cmd,
                     timeout_sec=timeout,
                     input_text=input_text,
-                    extra_env={"PYTHONPATH": sandbox_pythonpath},
+                    extra_env=_verification_extra_env(
+                        state,
+                        name,
+                        include_project_workspace=True,
+                    ),
                 )
                 data = res.data or {}
                 results.append(_verification_command_result(
@@ -463,7 +498,13 @@ def verify_node(state: dict) -> dict:
             test_runs.append(run)
         else:
             timeout = int((state.get("verification_step_timeouts") or {}).get(name, 180) or 180)
-            res = run_shell(state["workspace"], cmd, timeout_sec=timeout, input_text=input_text)
+            res = run_shell(
+                state["workspace"],
+                cmd,
+                timeout_sec=timeout,
+                input_text=input_text,
+                extra_env=_verification_extra_env(state, name),
+            )
             data = res.data or {}
             results.append(_verification_command_result(
                 state, name, cmd, data, fallback_message=res.message,
@@ -503,6 +544,7 @@ def verify_node(state: dict) -> dict:
             "failure_kind": result.failure_kind,
             "execution_workspace": (state.get("verification_step_workspaces") or {}).get(name, state["workspace"]),
             "sandboxed": name in (state.get("verification_step_sandboxes") or {}),
+            "command_adapter": (state.get("verification_command_adapters") or {}).get(name),
         })
     state["executed_verification_steps"] = executed_steps
     planned_steps = [
