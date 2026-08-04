@@ -1,6 +1,10 @@
+import io
 import json
 import socket
 import time
+import urllib.error
+
+import pytest
 
 from coding_agent.core import llm_client as llm_mod
 from coding_agent.core.llm_client import OpenAICompatClient
@@ -200,3 +204,60 @@ def test_thinking_payload_is_omitted_for_local_config_by_default(tmp_path, monke
     assert client.chat([{"role": "user", "content": "Say OK"}], purpose="unit", max_tokens=20) == "OK"
 
     assert "thinking" not in captured["payload"]
+
+
+def test_404_model_recovery_is_bounded_to_one_retry(tmp_path, monkeypatch):
+    _clear_llm_env(monkeypatch)
+    config = tmp_path / "model.yaml"
+    config.write_text(
+        "\n".join(
+            [
+                "base_url: https://api.example.com/v1",
+                "api_key: test-key",
+                "model: model-a",
+                "auto_model: true",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    calls = {"post": 0}
+
+    def fake_urlopen(req, timeout):
+        calls["post"] += 1
+        if calls["post"] > 3:
+            raise AssertionError("404 model recovery must not recurse indefinitely")
+        raise urllib.error.HTTPError(
+            req.full_url,
+            404,
+            "not found",
+            hdrs=None,
+            fp=io.BytesIO(b'{"error":"model not found"}'),
+        )
+
+    monkeypatch.setattr(llm_mod.urllib.request, "urlopen", fake_urlopen)
+    client = OpenAICompatClient(config)
+    monkeypatch.setattr(client, "_list_server_models", lambda: ["model-a", "model-b"])
+
+    with pytest.raises(RuntimeError, match="LLM HTTP error 404"):
+        client.chat([{"role": "user", "content": "Say OK"}], purpose="unit", max_tokens=20)
+
+    assert calls["post"] == 2
+
+
+def test_timeout_retry_reduces_output_and_input_budgets(tmp_path, monkeypatch):
+    _clear_llm_env(monkeypatch)
+    config = tmp_path / "model.yaml"
+    config.write_text("auto_model: false\nretry_on_timeout: 1\n", encoding="utf-8")
+    client = OpenAICompatClient(config)
+    attempts = []
+
+    def fake_request(messages, purpose, max_tokens, *, attempt, compact_factor):
+        attempts.append((attempt, max_tokens, compact_factor))
+        if attempt == 0:
+            raise llm_mod.LLMTimeoutError("slow provider")
+        return "OK"
+
+    monkeypatch.setattr(client, "_request_once", fake_request)
+
+    assert client.chat([{"role": "user", "content": "Say OK"}], purpose="unit", max_tokens=2000) == "OK"
+    assert attempts == [(0, 2000, 1.0), (1, 1000, 0.55)]

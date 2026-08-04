@@ -8,7 +8,7 @@ from pathlib import Path
 
 from coding_agent.core.schemas import ToolResult
 from coding_agent.safety.command_guard import CommandGuard
-from coding_agent.core.utils import truncate
+from coding_agent.core.utils import coerce_text, truncate
 
 
 def target_python_executable() -> str:
@@ -87,8 +87,8 @@ def run_shell(
         return ToolResult(tool="run_shell", ok=False, message="command timed out", data={
             "command": parts,
             "returncode": -1,
-            "stdout": truncate(e.stdout or "", max_output_chars),
-            "stderr": truncate(e.stderr or "", max_output_chars),
+            "stdout": truncate(coerce_text(e.stdout), max_output_chars),
+            "stderr": truncate(coerce_text(e.stderr), max_output_chars),
             "timed_out": True,
             "executed": True,
             "failure_kind": "timeout",

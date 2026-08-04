@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -9,6 +10,29 @@ from coding_agent.nodes.tool_exec import tool_exec_node
 from coding_agent.nodes.verify import _default_commands, _pytest_targets_for_command, verify_node
 from coding_agent.core.schemas import ToolResult
 from coding_agent.tools import test_tools
+
+
+def test_run_tests_timeout_preserves_byte_streams_as_text(tmp_path: Path, monkeypatch):
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(
+            cmd=args[0] if args else kwargs.get("args"),
+            timeout=0.01,
+            output=b"partial stdout\n",
+            stderr=b"partial stderr\n",
+        )
+
+    monkeypatch.setattr(test_tools.subprocess, "run", fake_run)
+
+    result = test_tools.run_tests(
+        str(tmp_path),
+        timeout_sec=1,
+        report_dir=str(tmp_path / "reports"),
+    )
+
+    assert result.ok is False
+    assert result.data["timed_out"] is True
+    assert result.data["stdout"] == "partial stdout\n"
+    assert result.data["stderr"] == "partial stderr\n"
 
 
 def test_source_modify_verification_runs_all_project_tests_even_with_registry(tmp_path: Path):

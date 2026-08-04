@@ -297,7 +297,16 @@ class OpenAICompatClient:
             "compact_factor": compact_factor,
         }
 
-    def _request_once(self, messages: list[dict[str, str]], purpose: str, max_tokens: int, *, attempt: int, compact_factor: float) -> str:
+    def _request_once(
+        self,
+        messages: list[dict[str, str]],
+        purpose: str,
+        max_tokens: int,
+        *,
+        attempt: int,
+        compact_factor: float,
+        allow_model_recovery: bool = True,
+    ) -> str:
         self._maybe_autoselect_model()
         url = f"{self.base_url}/chat/completions"
         fitted_messages, budget_info = self._fit_messages(messages, max_tokens, compact_factor=compact_factor)
@@ -336,7 +345,7 @@ class OpenAICompatClient:
                 data = json.loads(body.decode("utf-8"))
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")
-            if e.code == 404 and self.auto_model:
+            if e.code == 404 and self.auto_model and allow_model_recovery:
                 # Some vLLM deployments serve a custom --served-model-name while
                 # configs/model.yaml may be stale. If the user did not explicitly
                 # set AGENT_LLM_MODEL, discover the served model and retry once.
@@ -355,7 +364,14 @@ class OpenAICompatClient:
                         "available_models": ids[:20],
                         "detail": truncate(detail, 1000),
                     })
-                    return self._request_once(messages, purpose, max_tokens, attempt=attempt, compact_factor=compact_factor)
+                    return self._request_once(
+                        messages,
+                        purpose,
+                        max_tokens,
+                        attempt=attempt,
+                        compact_factor=compact_factor,
+                        allow_model_recovery=False,
+                    )
             if self.messages_path:
                 self._append_message_log({"type": "llm_error", "purpose": purpose, "attempt": attempt, "llm_call_id": llm_call_id, "status_code": e.code, "model": self.model, "detail": truncate(detail, 4000), "budget_info": budget_info})
             raise RuntimeError(f"LLM HTTP error {e.code}: {detail}") from e

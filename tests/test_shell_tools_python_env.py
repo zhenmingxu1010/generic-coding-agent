@@ -95,3 +95,23 @@ def test_run_shell_merges_explicit_environment(tmp_path: Path):
 
     assert res.ok is True
     assert res.data["stdout"] == "available\n"
+
+
+def test_run_shell_timeout_preserves_partial_output_as_text(tmp_path: Path):
+    (tmp_path / "slow.py").write_text(
+        "import time\nprint('x' * 200, flush=True)\ntime.sleep(2)\n",
+        encoding="utf-8",
+    )
+
+    res = run_shell(
+        str(tmp_path),
+        ["python", "slow.py"],
+        timeout_sec=0.05,
+        max_output_chars=20,
+    )
+
+    assert res.ok is False
+    assert res.data["timed_out"] is True
+    assert res.data["failure_kind"] == "timeout"
+    assert isinstance(res.data["stdout"], str)
+    assert res.data["stdout"].startswith("x" * 20)

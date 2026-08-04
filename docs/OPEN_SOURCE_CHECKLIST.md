@@ -42,9 +42,11 @@
 
 ## Current `main` hardening
 
-- [x] Pass 574 offline tests after workspace-boundary, read-only execution, and
-  PEP 621 console-entry verification
-  hardening on 2026-08-02.
+- [x] Pass 599 offline tests with 78% full-package line coverage after
+  workspace-boundary, read-only execution, PEP 621 console-entry, transport,
+  timeout, memory-recovery, retrieval, and terminal-routing hardening on
+  2026-08-05.
+- [x] Enforce a 75% full-package coverage floor in public CI.
 - [x] Reject external-target symlinks across search, repository mapping,
   interface checks, verification discovery, and workspace baselines.
 - [x] Keep explicit verify-only execution separate from read-only analysis and

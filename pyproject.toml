@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8.0,<10", "build>=1.2,<2"]
+test = ["pytest>=8.0,<10", "pytest-cov>=5,<8", "build>=1.2,<2"]
 
 [project.scripts]
 coding-agent = "coding_agent.main:main"

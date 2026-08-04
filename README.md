@@ -1,5 +1,7 @@
 # Generic Coding Agent
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 [![CI](https://github.com/zhenmingxu1010/generic-coding-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/zhenmingxu1010/generic-coding-agent/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/zhenmingxu1010/generic-coding-agent?include_prereleases)](https://github.com/zhenmingxu1010/generic-coding-agent/releases)
 [![Python](https://img.shields.io/badge/python-3.10--3.13-blue)](https://www.python.org/)
@@ -15,7 +17,7 @@ auditable run record.
 ![Validated terminal summary](docs/assets/validated-demo.svg)
 
 The summary records release evidence: 11/11 detailed model-backed scenarios,
-574 offline tests, isolated wheel import, and the local release gate. See
+599 offline tests, 78% package coverage, isolated wheel import, and the local release gate. See
 [Demo](docs/DEMO.md) and
 [validation transcript](docs/assets/validated-demo.txt) for reproducible steps
 and accessible text.
@@ -196,10 +198,15 @@ The offline suite does not require an LLM:
 
 ```bash
 python -m compileall -q coding_agent tests
-python -m pytest -q
+python -m pytest -q --cov=coding_agent --cov-report=term --cov-fail-under=75
 python -m build
 python scripts/release_check.py
 ```
+
+The current suite reports 78% line coverage across the complete package,
+including CLI modules. CI enforces a conservative 75% floor so new code cannot
+silently reduce the tested surface while deeper scenario coverage continues to
+grow.
 
 The end-to-end matrix requires a configured model and creates disposable
 fixtures under `.agent_runs/`:
@@ -259,13 +266,13 @@ architecture changes.
 - [Validation record](docs/VALIDATION.md)
 - [Real-world repair evaluation](docs/REAL_WORLD_EVALUATION.md)
 - [Completion criteria](docs/COMPLETION_CRITERIA.md)
-- [Project deep dive](docs/PROJECT_DEEP_DIVE.md)
-- [Agent interview guide](docs/INTERVIEW_GUIDE.md)
 - [Demo guide](docs/DEMO.md)
-- [Portfolio notes](docs/PORTFOLIO.md)
 - [Roadmap](ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)
 - [Changelog](CHANGELOG.md)
+
+Chinese translations use the adjacent `.zh-CN.md` filename, for example
+[`docs/ARCHITECTURE.zh-CN.md`](docs/ARCHITECTURE.zh-CN.md).
 
 ## License
 

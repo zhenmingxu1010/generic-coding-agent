@@ -6,14 +6,15 @@ model will behave identically.
 
 ## Environment
 
-- Offline release-gate rerun: 2026-08-02
+- Offline release-gate rerun: 2026-08-05
 - Model-backed evidence run: 2026-07-23
 - Platform: macOS arm64
 - Python: 3.12
 - Model protocol: OpenAI-compatible chat completions
 - Model used for live checks: `deepseek-v4-flash`
 - API connectivity check: passed
-- Offline suite: 574 passed
+- Offline suite: 599 passed
+- Full-package line coverage: 78.01% (CI floor: 75%)
 - Distribution build: wheel and source distribution passed
 - Built-wheel smoke check: package imports and CLI help passed
 - Local release gate: source scan, compile, pytest, build, distribution
@@ -32,6 +33,23 @@ two-case rerun, not a new full eleven-case matrix run; the full matrix evidence
 below remains the recorded 2026-07-23 bundle.
 
 ## Focused robustness probes
+
+An additional short-prompt, multi-file repair probe ran on 2026-08-05 against a
+disposable configuration-inheritance package. Its baseline had three failing
+tests: shallow nested overlays discarded parent siblings, returned cached data
+could mutate later calls, and an `extends` cycle raised `RecursionError`. The
+Agent reached `verified_ok` in three rounds and changed only the two
+implementation modules. All three project tests passed. Evaluator-owned code
+kept outside the workspace then passed deeper checks for three-level
+inheritance, recursive dictionary merge, list replacement, source immutability,
+cache isolation, base-config stability, and missing-key behavior.
+
+The same hardening pass added offline regressions for bounded provider-model
+recovery after HTTP 404, byte-valued partial output after subprocess timeouts,
+corrupt project-memory and reflection records, long prompts whose important
+code identifier occurs late, and terminal chat/code/repair routing. These tests
+exposed three general runtime defects before the fixes were applied; no probe
+or fixture name was added to `coding_agent/`.
 
 Two additional disposable projects were exercised on 2026-08-02 with external
 acceptance code kept outside the target workspaces:

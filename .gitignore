@@ -24,6 +24,14 @@ agent_regression_workspaces/
 configs/*.local.yaml
 configs/*.local.yml
 
+# Local-only interview and job-preparation notes
+docs/INTERVIEW_GUIDE.md
+docs/INTERVIEW_GUIDE.zh-CN.md
+docs/PORTFOLIO.md
+docs/PORTFOLIO.zh-CN.md
+docs/PROJECT_DEEP_DIVE.md
+docs/PROJECT_DEEP_DIVE.zh-CN.md
+
 # Local environment
 .env
 .venv/

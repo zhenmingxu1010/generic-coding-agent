@@ -22,16 +22,19 @@ All notable changes to this project are documented here. The format follows
 - Audit export manifest plus text redaction for common credentials and local
   absolute paths.
 - Detailed eleven-case audit validation and an offline local release gate.
-- Project deep dive, Agent interview guide, demo guide, completion criteria,
-  and portfolio notes.
+- Demo guide and explicit completion criteria.
 - Accessible terminal-demo transcript and animated validation summary.
 - A runtime-owned PEP 621 console-entry verification adapter for generated
   Python CLI projects, while undeclared executable names remain blocked.
+- A pytest coverage gate with full-package reporting and a 75% CI floor.
+- Transport, timeout-output, corrupt-memory, long-prompt retrieval, and terminal
+  command-routing regression tests.
 
 ### Changed
 
-- Public documentation now reflects the released repository, 574-test local
-  gate, successful public CI, published Alpha tag, and measured pilot cost.
+- Public documentation now reflects the released repository, 599-test local
+  gate, 78% package coverage, successful public CI, published Alpha tag, and
+  measured pilot cost.
 - Colloquial Chinese create, repair, modify, and inspection intent coverage.
 - The provider-neutral capability matrix now includes eleven scenarios,
   including short prompts, ambiguity handling, and conversational inspection.
@@ -44,6 +47,9 @@ All notable changes to this project are documented here. The format follows
   even when an oracle reviewer notices that the current code cannot pass them.
 - Traceback paths inside the workspace are normalized before repair target
   locking, and streamed model responses now obey a total wall-clock deadline.
+- Provider 404 model recovery is bounded to one alternate-model retry;
+  subprocess timeout streams are normalized to text before diagnostics; and
+  repository retrieval prioritizes code-like identifiers in long prompts.
 - Repair routing now keeps adjacent current-run modules for greenfield defects,
   permits read-grounded runtime targets when a broad repository repair was
   initially narrowed to speculative paths, and accepts execution-proved no-op

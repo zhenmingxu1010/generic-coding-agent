@@ -19,10 +19,13 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPORT = ROOT / ".agent_runs" / "release-check.json"
 REQUIRED_SDIST_MEMBERS = {
     "README.md",
+    "README.zh-CN.md",
     "LICENSE",
     "ROADMAP.md",
     "docs/ARCHITECTURE.md",
+    "docs/ARCHITECTURE.zh-CN.md",
     "docs/VALIDATION.md",
+    "docs/VALIDATION.zh-CN.md",
     "docs/REAL_WORLD_EVALUATION.md",
     "docs/assets/validated-demo.svg",
     "docs/assets/validated-demo.txt",
@@ -30,6 +33,14 @@ REQUIRED_SDIST_MEMBERS = {
     "evaluations/real_world/pilot-summary.json",
     "evaluations/real_world/cases/pysnooper-file-output.json",
     "scripts/collect_regression_audits.py",
+}
+FORBIDDEN_SDIST_MEMBERS = {
+    "docs/INTERVIEW_GUIDE.md",
+    "docs/INTERVIEW_GUIDE.zh-CN.md",
+    "docs/PORTFOLIO.md",
+    "docs/PORTFOLIO.zh-CN.md",
+    "docs/PROJECT_DEEP_DIVE.md",
+    "docs/PROJECT_DEEP_DIVE.zh-CN.md",
 }
 SECRET_PATTERNS = {
     "openai_style_key": re.compile(r"\b" + "sk" + r"-[A-Za-z0-9_-]{16,}\b"),
@@ -117,6 +128,8 @@ def validate_distributions(dist_dir: Path) -> dict[str, Any]:
                     members.add(Path(*parts[1:]).as_posix())
         missing = sorted(REQUIRED_SDIST_MEMBERS - members)
         failures.extend(f"sdist missing {item}" for item in missing)
+        forbidden = sorted(FORBIDDEN_SDIST_MEMBERS.intersection(members))
+        failures.extend(f"sdist contains local-only interview material: {item}" for item in forbidden)
     return {
         "ok": not failures,
         "wheel": str(wheels[0]) if wheels else None,
@@ -175,7 +188,15 @@ def main() -> None:
         checks["compile"] = _run(
             [sys.executable, "-m", "compileall", "-q", "coding_agent", "evaluations", "tests"]
         )
-        checks["pytest"] = _run([sys.executable, "-m", "pytest", "-q"])
+        checks["pytest"] = _run([
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "--cov=coding_agent",
+            "--cov-report=term",
+            "--cov-fail-under=75",
+        ])
     dist_dir = ROOT / "dist"
     if not args.skip_build:
         checks["build"] = _run([sys.executable, "-m", "build", "--no-isolation"])

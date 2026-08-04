@@ -11,7 +11,7 @@ from typing import Any
 
 from coding_agent.core.schemas import ToolResult
 from coding_agent.repair.traceback_parser import parse_traceback_issues
-from coding_agent.core.utils import truncate
+from coding_agent.core.utils import coerce_text, truncate
 from coding_agent.tools.shell_tools import target_python_executable
 from coding_agent.workspace.run_paths import agent_runs_root, is_test_like_path
 
@@ -310,8 +310,8 @@ def run_tests(
     except subprocess.TimeoutExpired as e:
         timed_out = True
         returncode = -1
-        stdout = e.stdout or ""
-        stderr = e.stderr or ""
+        stdout = coerce_text(e.stdout)
+        stderr = coerce_text(e.stderr)
 
     parsed = _parse_junit_xml(junit_path, workspace)
     stream_issues = parse_traceback_issues((stdout or "") + "\n" + (stderr or ""))

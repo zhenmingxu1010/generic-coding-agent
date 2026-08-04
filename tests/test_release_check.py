@@ -18,6 +18,8 @@ def test_validate_distributions_reports_missing_required_sdist_member(tmp_path: 
     root = tmp_path / "package-0.1.0"
     root.mkdir()
     (root / "README.md").write_text("readme\n", encoding="utf-8")
+    (root / "docs").mkdir()
+    (root / "docs" / "INTERVIEW_GUIDE.md").write_text("private notes\n", encoding="utf-8")
     with tarfile.open(tmp_path / "package.tar.gz", "w:gz") as archive:
         archive.add(root, arcname=root.name)
 
@@ -25,14 +27,18 @@ def test_validate_distributions_reports_missing_required_sdist_member(tmp_path: 
 
     assert result["ok"] is False
     assert any("sdist missing LICENSE" in failure for failure in result["failures"])
+    assert any("local-only interview material" in failure for failure in result["failures"])
 
 
 def test_required_distribution_manifest_covers_release_evidence():
     assert "docs/VALIDATION.md" in MODULE.REQUIRED_SDIST_MEMBERS
+    assert "docs/VALIDATION.zh-CN.md" in MODULE.REQUIRED_SDIST_MEMBERS
+    assert "README.zh-CN.md" in MODULE.REQUIRED_SDIST_MEMBERS
     assert "docs/assets/validated-demo.svg" in MODULE.REQUIRED_SDIST_MEMBERS
     assert "docs/assets/validated-demo.txt" in MODULE.REQUIRED_SDIST_MEMBERS
     assert "regression_matrix/matrix.json" in MODULE.REQUIRED_SDIST_MEMBERS
     assert "scripts/collect_regression_audits.py" in MODULE.REQUIRED_SDIST_MEMBERS
+    assert "docs/INTERVIEW_GUIDE.md" in MODULE.FORBIDDEN_SDIST_MEMBERS
 
 
 def test_wheel_smoke_does_not_put_source_checkout_on_pythonpath():
@@ -41,3 +47,10 @@ def test_wheel_smoke_does_not_put_source_checkout_on_pythonpath():
     assert 'smoke_env.pop("PYTHONPATH", None)' in source
     assert "p.is_relative_to" in source
     assert "cwd=temp_root" in source
+
+
+def test_local_release_gate_enforces_package_coverage_floor():
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    assert '"--cov=coding_agent"' in source
+    assert '"--cov-fail-under=75"' in source

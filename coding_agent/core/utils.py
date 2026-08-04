@@ -215,3 +215,17 @@ def truncate(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[:limit] + f"\n...<truncated {len(text) - limit} chars>"
+
+
+def coerce_text(value: Any, *, encoding: str = "utf-8") -> str:
+    """Return subprocess/provider output as serializable text.
+
+    ``subprocess.TimeoutExpired`` may expose captured output as bytes even when
+    the process was launched with ``text=True``.  Error paths must normalize it
+    before concatenation, truncation, tracing, or JSON serialization.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode(encoding, errors="replace")
+    return str(value)

@@ -1,13 +1,29 @@
 include AGENT_PRINCIPLES.md
+include AGENT_PRINCIPLES.zh-CN.md
+include AGENTS.md
+include AGENTS.zh-CN.md
 include CHANGELOG.md
+include CHANGELOG.zh-CN.md
 include CODE_OF_CONDUCT.md
+include CODE_OF_CONDUCT.zh-CN.md
 include CONTRIBUTING.md
+include CONTRIBUTING.zh-CN.md
+include README.zh-CN.md
 include ROADMAP.md
+include ROADMAP.zh-CN.md
 include SECURITY.md
+include SECURITY.zh-CN.md
 include VERSION
 include requirements.txt
+recursive-include coding_agent *.md
 recursive-include configs *.yaml
 recursive-include docs *.md *.txt *.gif *.svg
+exclude docs/INTERVIEW_GUIDE.md
+exclude docs/INTERVIEW_GUIDE.zh-CN.md
+exclude docs/PORTFOLIO.md
+exclude docs/PORTFOLIO.zh-CN.md
+exclude docs/PROJECT_DEEP_DIVE.md
+exclude docs/PROJECT_DEEP_DIVE.zh-CN.md
 recursive-include evaluations *.py *.json *.md
 recursive-include examples *.txt
 recursive-include regression_matrix *.json *.md

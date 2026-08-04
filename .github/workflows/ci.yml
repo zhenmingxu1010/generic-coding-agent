@@ -26,7 +26,7 @@ jobs:
       - name: Compile
         run: python -m compileall -q coding_agent tests
       - name: Test
-        run: python -m pytest -q
+        run: python -m pytest -q --cov=coding_agent --cov-report=term --cov-fail-under=75
       - name: Build distributions
         if: matrix.python-version == '3.12'
         run: python -m build
