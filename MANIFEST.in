@@ -17,13 +17,23 @@ include VERSION
 include requirements.txt
 recursive-include coding_agent *.md
 recursive-include configs *.yaml
-recursive-include docs *.md *.txt *.gif *.svg
-exclude docs/INTERVIEW_GUIDE.md
-exclude docs/INTERVIEW_GUIDE.zh-CN.md
-exclude docs/PORTFOLIO.md
-exclude docs/PORTFOLIO.zh-CN.md
-exclude docs/PROJECT_DEEP_DIVE.md
-exclude docs/PROJECT_DEEP_DIVE.zh-CN.md
+include docs/ARCHITECTURE.md
+include docs/ARCHITECTURE.zh-CN.md
+include docs/COMPLETION_CRITERIA.md
+include docs/COMPLETION_CRITERIA.zh-CN.md
+include docs/DEMO.md
+include docs/DEMO.zh-CN.md
+include docs/OPEN_SOURCE_CHECKLIST.md
+include docs/OPEN_SOURCE_CHECKLIST.zh-CN.md
+include docs/REAL_WORLD_EVALUATION.md
+include docs/REAL_WORLD_EVALUATION.zh-CN.md
+include docs/RUNBOOK.md
+include docs/RUNBOOK.zh-CN.md
+include docs/SECURITY_MODEL.md
+include docs/SECURITY_MODEL.zh-CN.md
+include docs/VALIDATION.md
+include docs/VALIDATION.zh-CN.md
+recursive-include docs *.txt *.gif *.svg
 recursive-include evaluations *.py *.json *.md
 recursive-include examples *.txt
 recursive-include regression_matrix *.json *.md

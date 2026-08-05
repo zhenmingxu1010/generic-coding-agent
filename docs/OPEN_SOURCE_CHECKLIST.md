@@ -30,14 +30,14 @@
 - [x] Pass the eleven-case canonical matrix with detailed machine validators.
 - [x] Pass the local release-candidate script, including clean wheel smoke.
 
-## Required for portfolio-quality `v0.1.0`
+## Required for release-quality `v0.1.0`
 
 - [x] Run the eleven-case capability matrix with recorded model configuration.
 - [x] Document reproducible local results, including failures and limitations.
 - [x] Add a short terminal recording or GIF with an accessible text transcript.
 - [x] Add a concise architecture diagram and design rationale.
 - [x] Add a roadmap with issues suitable for external contributors.
-- [x] Add a reproducible three-minute demo path and portfolio/interview notes.
+- [x] Add a reproducible three-minute demo path and bilingual technical documentation.
 - [x] Confirm package install/import/CLI startup in a temporary wheel environment.
 
 ## Current `main` hardening

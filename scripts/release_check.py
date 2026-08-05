@@ -34,13 +34,23 @@ REQUIRED_SDIST_MEMBERS = {
     "evaluations/real_world/cases/pysnooper-file-output.json",
     "scripts/collect_regression_audits.py",
 }
-FORBIDDEN_SDIST_MEMBERS = {
-    "docs/INTERVIEW_GUIDE.md",
-    "docs/INTERVIEW_GUIDE.zh-CN.md",
-    "docs/PORTFOLIO.md",
-    "docs/PORTFOLIO.zh-CN.md",
-    "docs/PROJECT_DEEP_DIVE.md",
-    "docs/PROJECT_DEEP_DIVE.zh-CN.md",
+PUBLIC_DOC_MEMBERS = {
+    "docs/ARCHITECTURE.md",
+    "docs/ARCHITECTURE.zh-CN.md",
+    "docs/COMPLETION_CRITERIA.md",
+    "docs/COMPLETION_CRITERIA.zh-CN.md",
+    "docs/DEMO.md",
+    "docs/DEMO.zh-CN.md",
+    "docs/OPEN_SOURCE_CHECKLIST.md",
+    "docs/OPEN_SOURCE_CHECKLIST.zh-CN.md",
+    "docs/REAL_WORLD_EVALUATION.md",
+    "docs/REAL_WORLD_EVALUATION.zh-CN.md",
+    "docs/RUNBOOK.md",
+    "docs/RUNBOOK.zh-CN.md",
+    "docs/SECURITY_MODEL.md",
+    "docs/SECURITY_MODEL.zh-CN.md",
+    "docs/VALIDATION.md",
+    "docs/VALIDATION.zh-CN.md",
 }
 SECRET_PATTERNS = {
     "openai_style_key": re.compile(r"\b" + "sk" + r"-[A-Za-z0-9_-]{16,}\b"),
@@ -128,8 +138,11 @@ def validate_distributions(dist_dir: Path) -> dict[str, Any]:
                     members.add(Path(*parts[1:]).as_posix())
         missing = sorted(REQUIRED_SDIST_MEMBERS - members)
         failures.extend(f"sdist missing {item}" for item in missing)
-        forbidden = sorted(FORBIDDEN_SDIST_MEMBERS.intersection(members))
-        failures.extend(f"sdist contains local-only interview material: {item}" for item in forbidden)
+        packaged_docs = {
+            item for item in members if item.startswith("docs/") and item.endswith(".md")
+        }
+        unexpected_docs = sorted(packaged_docs - PUBLIC_DOC_MEMBERS)
+        failures.extend(f"sdist contains unregistered documentation: {item}" for item in unexpected_docs)
     return {
         "ok": not failures,
         "wheel": str(wheels[0]) if wheels else None,

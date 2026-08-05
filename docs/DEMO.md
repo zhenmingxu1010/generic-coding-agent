@@ -26,19 +26,19 @@ mkdir -p /tmp/generic-agent-demo
 coding-agent \
   --workspace /tmp/generic-agent-demo \
   --task "写个脚本" \
-  --thread-id portfolio-demo \
+  --thread-id release-demo \
   --clean-agent-state
 
 coding-agent \
   --workspace /tmp/generic-agent-demo \
-  --thread-id portfolio-demo \
+  --thread-id release-demo \
   --resume \
   --clarification-answer "统计指定文本文件的行数，并把整数结果打印到终端。"
 
 coding-agent-export-audit \
   --workspace /tmp/generic-agent-demo \
-  --thread-id portfolio-demo \
-  --out /tmp/portfolio-demo-audit.zip \
+  --thread-id release-demo \
+  --out /tmp/release-demo-audit.zip \
   --include-workspace
 ```
 

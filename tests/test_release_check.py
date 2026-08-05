@@ -19,7 +19,7 @@ def test_validate_distributions_reports_missing_required_sdist_member(tmp_path: 
     root.mkdir()
     (root / "README.md").write_text("readme\n", encoding="utf-8")
     (root / "docs").mkdir()
-    (root / "docs" / "INTERVIEW_GUIDE.md").write_text("private notes\n", encoding="utf-8")
+    (root / "docs" / "LOCAL_NOTES.md").write_text("local notes\n", encoding="utf-8")
     with tarfile.open(tmp_path / "package.tar.gz", "w:gz") as archive:
         archive.add(root, arcname=root.name)
 
@@ -27,7 +27,7 @@ def test_validate_distributions_reports_missing_required_sdist_member(tmp_path: 
 
     assert result["ok"] is False
     assert any("sdist missing LICENSE" in failure for failure in result["failures"])
-    assert any("local-only interview material" in failure for failure in result["failures"])
+    assert any("unregistered documentation" in failure for failure in result["failures"])
 
 
 def test_required_distribution_manifest_covers_release_evidence():
@@ -38,7 +38,7 @@ def test_required_distribution_manifest_covers_release_evidence():
     assert "docs/assets/validated-demo.txt" in MODULE.REQUIRED_SDIST_MEMBERS
     assert "regression_matrix/matrix.json" in MODULE.REQUIRED_SDIST_MEMBERS
     assert "scripts/collect_regression_audits.py" in MODULE.REQUIRED_SDIST_MEMBERS
-    assert "docs/INTERVIEW_GUIDE.md" in MODULE.FORBIDDEN_SDIST_MEMBERS
+    assert "docs/ARCHITECTURE.md" in MODULE.PUBLIC_DOC_MEMBERS
 
 
 def test_wheel_smoke_does_not_put_source_checkout_on_pythonpath():

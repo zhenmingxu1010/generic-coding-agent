@@ -54,14 +54,14 @@ The next evidence milestone is complete when:
 - every runtime change prompted by an evaluation failure represents a general
   failure class and has an offline regression test.
 
-## Portfolio scope
+## Project readiness
 
-The project is portfolio-complete when a reviewer can:
+The project is release-ready when a reviewer can:
 
 - understand the problem and architecture from the README in under five
   minutes;
 - reproduce the offline release gate and model-backed matrix;
 - inspect honest metrics, failures, fixes, and limitations;
 - follow a short demo without private configuration;
-- read a technical deep dive and interview guide;
+- read the architecture, security, and validation guides;
 - reuse concise résumé bullets and a spoken project explanation.

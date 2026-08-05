@@ -11,7 +11,7 @@ An evidence-driven coding agent for understanding repositories, generating or
 modifying code, executing verification, repairing failures, and exporting an
 auditable run record.
 
-> Status: **alpha**. The project is useful for experimentation and portfolio
+> Status: **alpha**. The project is useful for experimentation and real-world
 > demonstrations, but it should run with limited permissions and human review.
 
 ![Validated terminal summary](docs/assets/validated-demo.svg)

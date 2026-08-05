@@ -52,7 +52,7 @@ real-repository pilot.
 - Document threat-model differences between trusted local projects and
   untrusted third-party repositories.
 
-## Portfolio and community
+## Documentation and community
 
 - Record a short terminal demo covering clarify, resume, verification, and
   audit export.
